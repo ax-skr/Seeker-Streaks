@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 const MAX_RESCUE_DAYS = 4;
 const SKR_PER_DAY = 500;
 
+// Optional debug endpoint (safe to keep)
 export async function GET() {
   return NextResponse.json({
     ok: true,
@@ -24,10 +25,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Wallet required" }, { status: 400 });
     }
 
-    // 1) Try a minimal query first (to avoid a crash from column mismatch)
+    // Load user
     const { data: user, error } = await supabaseAdmin
       .from("users")
-      .select("wallet, streak, last_checkin_date, rescued_days_used_run, verified_at")
+      .select(
+        "wallet, streak, last_checkin_date, rescued_days_used_run, verified_at"
+      )
       .eq("wallet", wallet)
       .maybeSingle();
 
@@ -43,6 +46,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    // Not verified yet
     if (!user.verified_at) {
       return NextResponse.json({
         ok: true,
@@ -50,8 +54,15 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // Compute missed days (UTC-safe)
     const today = new Date();
-    const todayUTC = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+    const todayUTC = new Date(
+      Date.UTC(
+        today.getUTCFullYear(),
+        today.getUTCMonth(),
+        today.getUTCDate()
+      )
+    );
 
     let missedDays = 0;
     if (user.last_checkin_date) {
@@ -60,7 +71,8 @@ export async function POST(req: NextRequest) {
       missedDays = Math.max(0, Math.floor(diffMs / 86400000) - 1);
     }
 
-    const remainingRescue = MAX_RESCUE_DAYS - (user.rescued_days_used_run ?? 0);
+    const remainingRescue =
+      MAX_RESCUE_DAYS - (user.rescued_days_used_run ?? 0);
 
     const canRescue =
       missedDays > 0 &&
@@ -80,8 +92,6 @@ export async function POST(req: NextRequest) {
     });
   } catch (e: any) {
     console.error("Status route crash:", e);
-
-    // IMPORTANT: show the actual error during dev so we can fix it immediately
     return NextResponse.json(
       {
         error: "Internal server error",
