@@ -10,12 +10,12 @@ function base64ToBytes(s: string): Uint8Array {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => ({}));
+    const body = await req.json();
 
     // Accept either publicKey (new) or publickey (older)
     const publicKey = String(body.publicKey ?? body.publickey ?? "").trim();
-    const message = String(body.message ?? "").trim();
-    const signature = String(body.signature ?? "").trim();
+    const message = String(body.message ?? "");
+    const signature = String(body.signature ?? "");
 
     if (!publicKey || !message || !signature) {
       return NextResponse.json(
@@ -45,8 +45,8 @@ export async function POST(req: Request) {
 
     // ✅ Verify signature
     const msgBytes = new TextEncoder().encode(message);
-    const sigBytes = base64ToBytes(signature); // base64
-    const pubBytes = bs58.decode(publicKey); // base58
+    const sigBytes = base64ToBytes(signature); // signature is base64
+    const pubBytes = bs58.decode(publicKey);   // wallet pubkey is base58
 
     const verified = nacl.sign.detached.verify(msgBytes, sigBytes, pubBytes);
 
@@ -57,39 +57,29 @@ export async function POST(req: Request) {
       );
     }
 
-    // ✅ Mark wallet verified in Supabase (service role)
-    const verifiedAt = new Date().toISOString();
+    // ✅ IMPORTANT: persist verified_at in Supabase
+    const nowIso = new Date().toISOString();
 
-    // Upsert ensures the user row exists even if they verify before any other endpoint inserts them.
     const { error: upsertErr } = await supabaseAdmin
       .from("users")
       .upsert(
         {
           wallet: publicKey,
-          verified_at: verifiedAt,
+          verified_at: nowIso,
         },
         { onConflict: "wallet" }
       );
 
     if (upsertErr) {
-      console.error("VERIFY UPSERT ERROR:", upsertErr);
+      console.error("SUPABASE VERIFY UPSERT ERROR:", upsertErr);
       return NextResponse.json(
-        {
-          ok: false,
-          error: "Failed to mark wallet verified",
-          supabase: {
-            message: upsertErr.message,
-            details: (upsertErr as any).details,
-            hint: (upsertErr as any).hint,
-            code: (upsertErr as any).code,
-          },
-        },
+        { ok: false, error: "Failed to update verification in database." },
         { status: 500 }
       );
     }
 
     // ✅ Clear nonce on success
-    const res = NextResponse.json({ ok: true, verified_at: verifiedAt });
+    const res = NextResponse.json({ ok: true, verified_at: nowIso });
     res.cookies.set("ss_nonce", "", { maxAge: 0, path: "/" });
 
     return res;
