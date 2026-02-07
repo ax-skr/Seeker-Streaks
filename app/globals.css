@@ -1,0 +1,41 @@
+/* Make the app full-bleed (removes white border) */
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: #020617; /* your dark */
+  color: #e5e7eb;
+  overflow-x: hidden;
+}
+
+/* Next root wrapper sometimes constrains width on mobile */
+body > div, 
+#__next {
+  width: 100%;
+  min-height: 100%;
+}
+
+/* Prevent tables/leaderboard from compressing columns on mobile */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+/* If your leaderboard uses a table inside a div, this helps */
+.leaderboard-table-wrap,
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Safe default for any table to allow scrolling instead of squashing */
+table {
+  display: block;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+/* Remove any browser default focus outline weirdness */
+* { box-sizing: border-box; }
