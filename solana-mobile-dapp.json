@@ -1,0 +1,12 @@
+{
+  "name": "Seeker Streaks",
+  "short_name": "Seeker Streaks",
+  "description": "Daily streaks for Solana Seeker users.",
+  "icon": "public/icon.png",
+  "url": "https://seeker-streaks.vercel.app/",
+  "version": "1.0.0",
+  "category": "Utilities",
+  "screenshots": [
+    "public/screenshot-1.png"
+  ]
+}
