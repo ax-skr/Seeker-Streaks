@@ -12,88 +12,85 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
+    // Accept either publicKey (new) or publickey (older)
     const publicKey = String(body.publicKey ?? body.publickey ?? "").trim();
-    const message = String(body.message ?? "");
-    const signature = String(body.signature ?? "");
+    const message = String(body.message ?? "").trim();
+    const signature = String(body.signature ?? "").trim();
 
     if (!publicKey || !message || !signature) {
-      return NextResponse.json({ ok: false, error: "Missing fields" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "Missing fields" },
+        { status: 400 }
+      );
     }
 
-    // Read nonce cookie
+    // ✅ Read nonce cookie
     const cookieStore = await cookies();
     const nonceCookie = cookieStore.get("ss_nonce")?.value;
 
     if (!nonceCookie) {
-      return NextResponse.json({ ok: false, error: "Nonce cookie missing/expired." }, { status: 401 });
+      return NextResponse.json(
+        { ok: false, error: "Nonce cookie missing/expired." },
+        { status: 401 }
+      );
     }
 
+    // ✅ Ensure message contains nonce
     if (!message.includes(nonceCookie)) {
-      return NextResponse.json({ ok: false, error: "Nonce mismatch." }, { status: 401 });
+      return NextResponse.json(
+        { ok: false, error: "Nonce mismatch." },
+        { status: 401 }
+      );
     }
 
-    // Verify signature
+    // ✅ Verify signature
     const msgBytes = new TextEncoder().encode(message);
-    const sigBytes = base64ToBytes(signature);
-    const pubBytes = bs58.decode(publicKey);
+    const sigBytes = base64ToBytes(signature);      // signature is base64
+    const pubBytes = bs58.decode(publicKey);        // wallet pubkey is base58
 
     const verified = nacl.sign.detached.verify(msgBytes, sigBytes, pubBytes);
+
     if (!verified) {
-      return NextResponse.json({ ok: false, error: "Invalid signature." }, { status: 401 });
+      return NextResponse.json(
+        { ok: false, error: "Invalid signature." },
+        { status: 401 }
+      );
     }
 
+    // ✅ Write verification to DB (upsert user + set verified_at)
+    // NOTE: this does NOT expose secrets; it uses service role on the server.
     const nowIso = new Date().toISOString();
 
-    // ✅ IMPORTANT: If user exists -> update verified_at
-    // If not -> insert a full row with required defaults + verified_at
-    const { data: existing, error: selErr } = await supabaseAdmin
+    const { error: upsertErr } = await supabaseAdmin
       .from("users")
-      .select("wallet")
-      .eq("wallet", publicKey)
-      .maybeSingle();
-
-    if (selErr) {
-      console.error("VERIFY SELECT ERROR:", selErr);
-      return NextResponse.json({ ok: false, error: "Failed to read user." }, { status: 500 });
-    }
-
-    if (existing?.wallet) {
-      const { error: updErr } = await supabaseAdmin
-        .from("users")
-        .update({ verified_at: nowIso })
-        .eq("wallet", publicKey);
-
-      if (updErr) {
-        console.error("VERIFY UPDATE ERROR:", updErr);
-        return NextResponse.json({ ok: false, error: "Failed to update verification." }, { status: 500 });
-      }
-    } else {
-      const { error: insErr } = await supabaseAdmin
-        .from("users")
-        .insert({
+      .upsert(
+        {
           wallet: publicKey,
-          points: 0,
-          streak: 0,
-          rescued_days_used_run: 0,
-          last_checkin_date: null,
           verified_at: nowIso,
-        });
+          // optional defaults if your table allows them:
+          is_public: true,
+        },
+        { onConflict: "wallet" }
+      );
 
-      if (insErr) {
-        console.error("VERIFY INSERT ERROR:", insErr);
-        return NextResponse.json(
-          { ok: false, error: "Failed to create verified user." },
-          { status: 500 }
-        );
-      }
+    if (upsertErr) {
+      console.error("VERIFY UPSERT ERROR:", upsertErr);
+      return NextResponse.json(
+        { ok: false, error: "Failed to mark wallet verified" },
+        { status: 500 }
+      );
     }
 
-    // Clear nonce
-    const res = NextResponse.json({ ok: true, verified_at: nowIso });
+    // ✅ Clear nonce on success
+    const res = NextResponse.json({ ok: true });
     res.cookies.set("ss_nonce", "", { maxAge: 0, path: "/" });
+
     return res;
   } catch (err) {
     console.error("Verify error:", err);
-    return NextResponse.json({ ok: false, error: "Server error" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: "Server error" },
+      { status: 500 }
+    );
   }
 }
