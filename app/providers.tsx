@@ -1,43 +1,19 @@
 "use client";
 
-import React, { useEffect, useMemo } from "react";
+import React, { useMemo } from "react";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
-import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
-import { SolflareWalletAdapter } from "@solana/wallet-adapter-solflare";
-import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
 import * as solanaMobile from "@solana-mobile/wallet-adapter-mobile";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
 
-function isSolanaMobileDevice() {
-  if (typeof window === "undefined") return false;
-  return /SolanaMobile|SeedVault|Seeker/i.test(navigator.userAgent);
-}
-
 export default function Providers({ children }: { children: React.ReactNode }) {
-  /**
-   * IMPORTANT:
-   * Hard-force a public RPC that does not 403.
-   * Do NOT read NEXT_PUBLIC_SOLANA_RPC_URL until everything works.
-   */
-  const endpoint = "https://api.mainnet-beta.solana.com";
-
-  useEffect(() => {
-    // This will show in your devtools/console (desktop + mobile remote debugging)
-    console.log("[ConnectionProvider] endpoint =", endpoint);
-  }, [endpoint]);
+  // ✅ Keep it simple + stable for Seeker/TWA
+  const endpoint =
+    process.env.NEXT_PUBLIC_SOLANA_RPC_URL || "https://api.mainnet-beta.solana.com";
 
   const wallets = useMemo(() => {
-    // Desktop
-    if (!isSolanaMobileDevice()) {
-      return [
-        new PhantomWalletAdapter(),
-        new SolflareWalletAdapter({ network: WalletAdapterNetwork.Mainnet }),
-      ];
-    }
-
-    // Solana Mobile / Seed Vault / Seeker
+    // ✅ Seeker-only: Solana Mobile Wallet Adapter (MWA)
     const MobileAdapter = (solanaMobile as any).SolanaMobileWalletAdapter;
     if (!MobileAdapter) return [];
 
@@ -62,11 +38,9 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         authorizationResultCache,
         appIdentity: {
           name: "Seeker Streaks",
-          uri: typeof window !== "undefined" ? window.location.origin : "",
-          icon:
-            typeof window !== "undefined"
-              ? `${window.location.origin}/favicon.ico`
-              : undefined,
+          uri: "https://seeker-streaks.vercel.app",
+          // ✅ use your icon instead of favicon (cleaner + avoids weird borders)
+          icon: "https://seeker-streaks.vercel.app/icon-192.png",
         },
       }),
     ];
