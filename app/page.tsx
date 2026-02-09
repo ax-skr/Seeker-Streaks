@@ -130,10 +130,8 @@ function WalletDebugBanner() {
 
       {!anyReady && (
         <div style={{ marginTop: 8, opacity: 0.9 }}>
-          ⚠️ <strong>No MWA provider detected.</strong> That means your phone
-          currently has no wallet/app exposing Mobile Wallet Adapter to the
-          browser/TWA. Open/update your Seeker wallet app (or an MWA-capable
-          wallet) once, then retry.
+          ⚠️ <strong>No MWA provider detected.</strong> Open/update your Seeker
+          wallet app (or an MWA-capable wallet) once, then retry.
         </div>
       )}
     </div>
@@ -155,7 +153,16 @@ type RescueQuote = {
 };
 
 export default function Home() {
-  const { publicKey, connected, signMessage, wallet } = useWallet();
+  const {
+    publicKey,
+    connected,
+    signMessage,
+    wallet,
+    wallets,
+    select,
+    connecting,
+  } = useWallet();
+
   const { connection } = useConnection(); // kept if you use it elsewhere
 
   const [mounted, setMounted] = useState(false);
@@ -184,23 +191,54 @@ export default function Home() {
 
   const walletStr = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
 
-  // ✅ FIX: don't use WalletMultiButton (modal). Connect directly via the adapter.
+  // ✅ FIX: auto-select the ONLY wallet (MWA) before connect()
   const handleConnect = useCallback(async () => {
     try {
       setMsg("");
-      const adapter: any = wallet?.adapter;
 
-      if (!adapter) {
-        setMsg("Wallet adapter not ready.");
-        return;
-      }
+      // If already connecting, do nothing
+      if (connecting) return;
 
+      // Disconnect if connected
       if (connected) {
-        if (typeof adapter.disconnect === "function") {
-          await adapter.disconnect();
-        }
+        const current: any = wallet?.adapter;
+        if (current?.disconnect) await current.disconnect();
         return;
       }
+
+      // If no active wallet selected yet, select the first (and only) wallet
+      if (!wallet?.adapter) {
+        const first = wallets?.[0]?.adapter as any;
+        if (!first) {
+          setMsg("No wallet adapter available.");
+          return;
+        }
+
+        // Only select if it looks usable
+        const rs = first.readyState;
+        const ready =
+          rs === WalletReadyState.Installed || rs === WalletReadyState.Loadable;
+
+        if (!ready) {
+          setMsg(`Wallet not ready (readyState=${String(rs)}).`);
+          return;
+        }
+
+        // Select it for adapter-react state
+        select(first.name);
+
+        // Immediately call connect on the same adapter instance (no waiting for re-render)
+        if (typeof first.connect !== "function") {
+          setMsg("Wallet cannot connect (connect missing).");
+          return;
+        }
+
+        await first.connect();
+        return;
+      }
+
+      // Normal path: active adapter exists
+      const adapter: any = wallet.adapter;
 
       if (typeof adapter.connect !== "function") {
         setMsg("Wallet cannot connect (connect missing).");
@@ -213,7 +251,7 @@ export default function Home() {
       const m = e?.message ? String(e.message) : String(e);
       setMsg(`Connect failed: ${m}`);
     }
-  }, [wallet, connected]);
+  }, [wallet, wallets, select, connected, connecting]);
 
   // ---------- rescue quote ----------
   const loadRescueQuote = useCallback(async () => {
@@ -544,7 +582,6 @@ export default function Home() {
           Daily streaks for Solana Seeker users
         </p>
 
-        {/* ✅ DEBUG BANNER */}
         <WalletDebugBanner />
 
         <div
@@ -556,7 +593,6 @@ export default function Home() {
             marginBottom: 16,
           }}
         >
-          {/* ✅ FIX: replace WalletMultiButton with direct connect */}
           <button
             onClick={handleConnect}
             style={{
@@ -656,7 +692,6 @@ export default function Home() {
               <strong>{rescueQuote!.costSKR} SKR</strong> to keep your streak.
             </div>
 
-            {/* Primary: Pay */}
             <button
               onClick={payRescue}
               disabled={paying || resetting}
@@ -674,7 +709,6 @@ export default function Home() {
               {paying ? "Paying…" : `Pay ${rescueQuote!.costSKR} SKR`}
             </button>
 
-            {/* Secondary: Reset */}
             <button
               onClick={resetStreak}
               disabled={resetting || paying}
