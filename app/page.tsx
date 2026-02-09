@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import { WalletReadyState } from "@solana/wallet-adapter-base";
 import {
   Connection,
   PublicKey,
@@ -57,6 +58,86 @@ function toBase64(bytes: Uint8Array): string {
 function shortWallet(w?: string | null) {
   if (!w) return "";
   return `${w.slice(0, 4)}…${w.slice(-4)}`;
+}
+
+// ✅ Debug banner for MWA / adapter readiness
+function WalletDebugBanner() {
+  const { wallets, wallet, publicKey, connected, connecting } = useWallet();
+
+  const adapter: any = wallet?.adapter;
+  const readyState = adapter?.readyState;
+
+  const adapterName = adapter?.name || "None";
+
+  const readyLabel =
+    readyState === WalletReadyState.Installed
+      ? "Installed"
+      : readyState === WalletReadyState.Loadable
+      ? "Loadable"
+      : readyState === WalletReadyState.NotDetected
+      ? "NotDetected"
+      : readyState === WalletReadyState.Unsupported
+      ? "Unsupported"
+      : String(readyState ?? "Unknown");
+
+  const anyReady = (wallets || []).some((w: any) => {
+    const rs = w?.adapter?.readyState;
+    return rs === WalletReadyState.Installed || rs === WalletReadyState.Loadable;
+  });
+
+  const isSolanaMobileUA =
+    typeof navigator !== "undefined" &&
+    /SolanaMobile|SeedVault|Seeker/i.test(navigator.userAgent);
+
+  const walletCount = wallets?.length ?? 0;
+
+  return (
+    <div
+      style={{
+        background: "rgba(0,0,0,0.35)",
+        border: "1px solid rgba(255,255,255,0.14)",
+        borderRadius: 12,
+        padding: 12,
+        marginBottom: 12,
+        fontSize: 12,
+        lineHeight: 1.4,
+      }}
+    >
+      <div style={{ fontWeight: 900, marginBottom: 6 }}>Debug (MWA)</div>
+
+      <div>
+        UA SolanaMobile/SeedVault: <strong>{String(isSolanaMobileUA)}</strong>
+      </div>
+      <div>
+        wallets (adapter-react): <strong>{walletCount}</strong>
+      </div>
+      <div>
+        any wallet ready: <strong>{String(!!anyReady)}</strong>
+      </div>
+
+      <div style={{ marginTop: 6 }}>
+        active adapter: <strong>{adapterName}</strong> • readyState:{" "}
+        <strong>{readyLabel}</strong>
+      </div>
+
+      <div style={{ marginTop: 6 }}>
+        connected: <strong>{String(connected)}</strong> • connecting:{" "}
+        <strong>{String(connecting)}</strong> • pubkey:{" "}
+        <strong>
+          {publicKey ? publicKey.toBase58().slice(0, 6) + "…" : "none"}
+        </strong>
+      </div>
+
+      {!anyReady && (
+        <div style={{ marginTop: 8, opacity: 0.9 }}>
+          ⚠️ <strong>No MWA provider detected.</strong> That means your phone
+          currently has no wallet/app exposing Mobile Wallet Adapter to the
+          browser/TWA. Open/update your Seeker wallet app (or an MWA-capable
+          wallet) once, then retry.
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ---------- types ----------
@@ -462,6 +543,9 @@ export default function Home() {
         <p style={{ opacity: 0.75, marginBottom: 20 }}>
           Daily streaks for Solana Seeker users
         </p>
+
+        {/* ✅ DEBUG BANNER */}
+        <WalletDebugBanner />
 
         <div
           style={{
