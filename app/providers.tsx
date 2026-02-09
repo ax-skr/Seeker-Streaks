@@ -2,22 +2,23 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
-import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
+import {
+  WalletModalProvider,
+} from "@solana/wallet-adapter-react-ui";
 import "@solana/wallet-adapter-react-ui/styles.css";
 
+// ✅ Solana Mobile adapter ONLY (Seeker / Seed Vault / MWA)
 import * as solanaMobile from "@solana-mobile/wallet-adapter-mobile";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const endpoint = "https://api.mainnet-beta.solana.com";
-  const [origin, setOrigin] = useState<string | null>(null);
+  const [origin, setOrigin] = useState<string>("");
 
   useEffect(() => {
     if (typeof window !== "undefined") setOrigin(window.location.origin);
   }, []);
 
   const wallets = useMemo(() => {
-    if (!origin) return [];
-
     const MobileAdapterCtor =
       (solanaMobile as any).SolanaMobileWalletAdapter ||
       (solanaMobile as any).default;
@@ -27,7 +28,12 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     const createDefaultAuthorizationResultCache =
       (solanaMobile as any).createDefaultAuthorizationResultCache;
 
-    if (!MobileAdapterCtor) return [];
+    if (!MobileAdapterCtor) {
+      console.error(
+        "[Providers] SolanaMobileWalletAdapter not found in @solana-mobile/wallet-adapter-mobile"
+      );
+      return [];
+    }
 
     const addressSelector =
       typeof createDefaultAddressSelector === "function"
@@ -45,19 +51,18 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         authorizationResultCache,
         appIdentity: {
           name: "Seeker Streaks",
-          uri: origin,
-          icon: `${origin}/icon-192.png`,
+          uri: origin || undefined,
+          // MUST be a real image that exists publicly:
+          icon: origin ? `${origin}/icon-192.png` : undefined,
         },
       }),
     ];
   }, [origin]);
 
-  // Don't mount wallet context until we know origin
-  if (!origin) return <>{children}</>;
-
   return (
     <ConnectionProvider endpoint={endpoint}>
       <WalletProvider wallets={wallets} autoConnect={false}>
+        {/* ✅ REQUIRED for WalletMultiButton */}
         <WalletModalProvider>{children}</WalletModalProvider>
       </WalletProvider>
     </ConnectionProvider>
