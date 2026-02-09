@@ -5,12 +5,12 @@ import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import "@solana/wallet-adapter-react-ui/styles.css";
 
-// ✅ Solana Mobile adapter ONLY (Seeker / Seed Vault)
+// ✅ Solana Mobile adapter ONLY (Seeker / MWA)
 import * as solanaMobile from "@solana-mobile/wallet-adapter-mobile";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const endpoint = "https://api.mainnet-beta.solana.com";
-  const [origin, setOrigin] = useState<string>("");
+  const [origin, setOrigin] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -19,6 +19,8 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   }, []);
 
   const wallets = useMemo(() => {
+    if (!origin) return [];
+
     const MobileAdapterCtor =
       (solanaMobile as any).SolanaMobileWalletAdapter ||
       (solanaMobile as any).default;
@@ -38,18 +40,12 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     const addressSelector =
       typeof createDefaultAddressSelector === "function"
         ? createDefaultAddressSelector()
-        : {
-            select: async (addresses: string[]) => addresses?.[0],
-          };
+        : { select: async (addresses: string[]) => addresses?.[0] };
 
     const authorizationResultCache =
       typeof createDefaultAuthorizationResultCache === "function"
         ? createDefaultAuthorizationResultCache()
-        : {
-            clear: async () => {},
-            get: async () => null,
-            set: async () => {},
-          };
+        : { clear: async () => {}, get: async () => null, set: async () => {} };
 
     return [
       new MobileAdapterCtor({
@@ -57,17 +53,19 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         authorizationResultCache,
         appIdentity: {
           name: "Seeker Streaks",
-          uri: origin || undefined,
-          icon: origin ? `${origin}/icon-192.png` : undefined,
+          uri: origin,
+          icon: `${origin}/icon-192.png`,
         },
       }),
     ];
   }, [origin]);
 
+  // ✅ IMPORTANT: don't mount WalletProvider until origin exists
+  if (!origin) return <>{children}</>;
+
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <WalletProvider wallets={wallets} autoConnect>
-        {/* 🔑 REQUIRED for WalletMultiButton */}
+      <WalletProvider wallets={wallets} autoConnect={false}>
         <WalletModalProvider>{children}</WalletModalProvider>
       </WalletProvider>
     </ConnectionProvider>
