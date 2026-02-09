@@ -5,7 +5,6 @@ import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react
 import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import "@solana/wallet-adapter-react-ui/styles.css";
 
-// ✅ Solana Mobile adapter ONLY (Seeker / MWA)
 import * as solanaMobile from "@solana-mobile/wallet-adapter-mobile";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
@@ -13,9 +12,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   const [origin, setOrigin] = useState<string | null>(null);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      setOrigin(window.location.origin);
-    }
+    if (typeof window !== "undefined") setOrigin(window.location.origin);
   }, []);
 
   const wallets = useMemo(() => {
@@ -30,12 +27,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     const createDefaultAuthorizationResultCache =
       (solanaMobile as any).createDefaultAuthorizationResultCache;
 
-    if (!MobileAdapterCtor) {
-      console.error(
-        "[Providers] SolanaMobileWalletAdapter not found in @solana-mobile/wallet-adapter-mobile"
-      );
-      return [];
-    }
+    if (!MobileAdapterCtor) return [];
 
     const addressSelector =
       typeof createDefaultAddressSelector === "function"
@@ -60,7 +52,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     ];
   }, [origin]);
 
-  // ✅ IMPORTANT: don't mount WalletProvider until origin exists
+  // Don't mount wallet context until we know origin
   if (!origin) return <>{children}</>;
 
   return (
