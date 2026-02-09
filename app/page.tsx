@@ -82,7 +82,6 @@ export default function Home() {
     signMessage,
     wallet,
     wallets,
-    select,
   } = useWallet();
 
   const { connection } = useConnection(); // kept if you use it elsewhere
@@ -122,69 +121,55 @@ export default function Home() {
   const activeAdapter: any = wallet?.adapter;
   const activeName = activeAdapter?.name ?? "None";
   const readyState = activeAdapter?.readyState ?? "Unknown";
-  const anyReady = wallets?.some((w) => w.adapter?.readyState) ?? false;
 
-  // ✅ FIX: Explicitly select the only wallet adapter before connecting
+  // ✅ FIX: connect MUST happen directly in the click gesture.
+  // Do NOT "select()" or "await sleep()" before connect.
   const handleConnect = useCallback(async () => {
+    // Grab the only adapter instance (MWA)
+    const onlyAdapter: any = wallets?.[0]?.adapter;
+
     try {
       setMsg("");
 
-      // If already connected -> disconnect
+      if (!onlyAdapter) {
+        setMsg("No wallet adapter instance found.");
+        return;
+      }
+
+      // Disconnect
       if (connected) {
-        if (activeAdapter?.disconnect) {
-          await activeAdapter.disconnect();
+        if (typeof onlyAdapter.disconnect === "function") {
+          await onlyAdapter.disconnect();
         }
         return;
       }
 
-      // If no wallet selected yet, but we have exactly 1 wallet available -> select it
-      if (!wallet?.adapter) {
-        if (!wallets || wallets.length === 0) {
-          setMsg("No wallet adapters available.");
-          return;
-        }
-
-        if (wallets.length === 1) {
-          const only = wallets[0]?.adapter;
-          if (!only?.name) {
-            setMsg("Wallet adapter not ready (no adapter name).");
-            return;
-          }
-
-          // Select it in WalletProvider state
-          select(only.name);
-
-          // Tiny tick so state can propagate before connect (important on mobile)
-          await new Promise((r) => setTimeout(r, 50));
-
-          // Call connect on the actual adapter instance we have
-          if (typeof only.connect !== "function") {
-            setMsg("Wallet cannot connect (connect missing).");
-            return;
-          }
-
-          await only.connect();
-          return;
-        }
-
-        // If somehow more than one exists (you said you don't want this)
-        setMsg("Multiple wallets detected — selection UI removed.");
-        return;
-      }
-
-      // Wallet is selected already, connect with it
-      if (typeof activeAdapter?.connect !== "function") {
+      if (typeof onlyAdapter.connect !== "function") {
         setMsg("Wallet cannot connect (connect missing).");
         return;
       }
 
-      await activeAdapter.connect();
+      // Show immediate feedback
+      setMsg("Opening wallet…");
+
+      // Watchdog: if nothing happens after 6s, show a helpful hint
+      const t = setTimeout(() => {
+        setMsg(
+          "No wallet opened. If you're in Chrome, try opening this inside the Seeker app / Seed Vault browser or your installed TWA APK."
+        );
+      }, 6000);
+
+      // IMPORTANT: this call must be the first real async action from the click
+      await onlyAdapter.connect();
+
+      clearTimeout(t);
+      setMsg("");
     } catch (e: any) {
-      console.error(e);
       const m = e?.message ? String(e.message) : String(e);
+      console.error(e);
       setMsg(`Connect failed: ${m}`);
     }
-  }, [connected, activeAdapter, wallet, wallets, select]);
+  }, [wallets, connected]);
 
   // ---------- rescue quote ----------
   const loadRescueQuote = useCallback(async () => {
@@ -515,7 +500,7 @@ export default function Home() {
           Daily streaks for Solana Seeker users
         </p>
 
-        {/* ✅ Debug banner */}
+        {/* Debug banner */}
         <div
           style={{
             background: "rgba(2,6,23,0.8)",
@@ -532,7 +517,9 @@ export default function Home() {
           <div>UA SolanaMobile/SeedVault: {String(uaSolanaMobile)}</div>
           <div>wallets (adapter-react): {wallets?.length ?? 0}</div>
           <div>selected wallet: {wallet?.adapter?.name ?? "None"}</div>
-          <div>active adapter: {activeName} • readyState: {String(readyState)}</div>
+          <div>
+            active adapter: {activeName} • readyState: {String(readyState)}
+          </div>
           <div>
             connected: {String(connected)} • connecting: {String(connecting)} •
             disconnecting: {String(disconnecting)} • pubkey:{" "}
@@ -549,7 +536,6 @@ export default function Home() {
             marginBottom: 16,
           }}
         >
-          {/* ✅ Direct connect */}
           <button
             onClick={handleConnect}
             disabled={connecting || disconnecting}
@@ -565,7 +551,11 @@ export default function Home() {
               opacity: connecting || disconnecting ? 0.7 : 1,
             }}
           >
-            {connected ? "Disconnect wallet" : connecting ? "Connecting…" : "Connect wallet"}
+            {connected
+              ? "Disconnect wallet"
+              : connecting
+              ? "Connecting…"
+              : "Connect wallet"}
           </button>
 
           {connected && (
