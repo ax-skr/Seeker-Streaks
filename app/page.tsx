@@ -59,6 +59,17 @@ function shortWallet(w?: string | null) {
   return `${w.slice(0, 4)}…${w.slice(-4)}`;
 }
 
+function safeErr(e: any) {
+  try {
+    if (!e) return "Unknown error";
+    if (typeof e === "string") return e;
+    if (e?.message) return String(e.message);
+    return JSON.stringify(e);
+  } catch {
+    return "Unknown error";
+  }
+}
+
 // ---------- types ----------
 type RescueQuote = {
   ok: boolean;
@@ -122,53 +133,55 @@ export default function Home() {
   const activeName = activeAdapter?.name ?? "None";
   const readyState = activeAdapter?.readyState ?? "Unknown";
 
-  // ✅ FIX: connect MUST happen directly in the click gesture.
-  // Do NOT "select()" or "await sleep()" before connect.
-  const handleConnect = useCallback(async () => {
-    // Grab the only adapter instance (MWA)
+  // ✅ FIX: fire connect() immediately in the click gesture
+  // (no awaited work before starting connect)
+  const handleConnect = useCallback(() => {
     const onlyAdapter: any = wallets?.[0]?.adapter;
 
-    try {
-      setMsg("");
+    setMsg("");
 
-      if (!onlyAdapter) {
-        setMsg("No wallet adapter instance found.");
-        return;
-      }
-
-      // Disconnect
-      if (connected) {
-        if (typeof onlyAdapter.disconnect === "function") {
-          await onlyAdapter.disconnect();
-        }
-        return;
-      }
-
-      if (typeof onlyAdapter.connect !== "function") {
-        setMsg("Wallet cannot connect (connect missing).");
-        return;
-      }
-
-      // Show immediate feedback
-      setMsg("Opening wallet…");
-
-      // Watchdog: if nothing happens after 6s, show a helpful hint
-      const t = setTimeout(() => {
-        setMsg(
-          "No wallet opened. If you're in Chrome, try opening this inside the Seeker app / Seed Vault browser or your installed TWA APK."
-        );
-      }, 6000);
-
-      // IMPORTANT: this call must be the first real async action from the click
-      await onlyAdapter.connect();
-
-      clearTimeout(t);
-      setMsg("");
-    } catch (e: any) {
-      const m = e?.message ? String(e.message) : String(e);
-      console.error(e);
-      setMsg(`Connect failed: ${m}`);
+    if (!onlyAdapter) {
+      setMsg("No wallet adapter instance found.");
+      return;
     }
+
+    if (connected) {
+      Promise.resolve()
+        .then(() => onlyAdapter.disconnect?.())
+        .catch((e: any) => setMsg(`Disconnect failed: ${safeErr(e)}`));
+      return;
+    }
+
+    if (typeof onlyAdapter.connect !== "function") {
+      setMsg("Wallet cannot connect (connect missing).");
+      return;
+    }
+
+    setMsg("Clicked. Launching wallet…");
+
+    let settled = false;
+
+    // Start connect NOW (no await before starting)
+    const p = onlyAdapter.connect();
+
+    Promise.resolve(p)
+      .then(() => {
+        settled = true;
+        setMsg("");
+      })
+      .catch((e: any) => {
+        settled = true;
+        setMsg(`Connect failed: ${safeErr(e)}`);
+      });
+
+    // Watchdog if intent never opens / connect hangs
+    setTimeout(() => {
+      if (!settled) {
+        setMsg(
+          "connect() is still pending. This usually means the wallet won’t launch or the origin isn’t trusted (assetlinks.json missing for your TWA)."
+        );
+      }
+    }, 2500);
   }, [wallets, connected]);
 
   // ---------- rescue quote ----------
@@ -604,97 +617,6 @@ export default function Home() {
           )}
         </div>
 
-        {status && (
-          <div
-            style={{
-              background: "#020617",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 14,
-              padding: 16,
-              marginBottom: 16,
-            }}
-          >
-            <div>
-              🔥 Streak: <strong>{status.streak}</strong>
-            </div>
-            <div>⏳ Missed days: {status.missedDays}</div>
-            <div>🛡️ Rescues left: {status.remainingRescue}</div>
-          </div>
-        )}
-
-        {showRescueCard && (
-          <div
-            style={{
-              background: "#020617",
-              border: "1px solid rgba(255,255,255,0.12)",
-              borderRadius: 14,
-              padding: 16,
-              marginBottom: 16,
-            }}
-          >
-            <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>
-              🛟 Rescue your streak
-            </div>
-
-            <div style={{ opacity: 0.85, marginBottom: 12 }}>
-              You missed <strong>{rescueQuote!.missedDays}</strong> day(s). Pay{" "}
-              <strong>{rescueQuote!.costSKR} SKR</strong> to keep your streak.
-            </div>
-
-            <button
-              onClick={payRescue}
-              disabled={paying || resetting}
-              style={{
-                width: "100%",
-                padding: "14px",
-                borderRadius: 12,
-                background: "linear-gradient(90deg,#22d3ee,#7c3aed)",
-                border: "none",
-                color: "#020617",
-                fontWeight: 900,
-                cursor: paying || resetting ? "not-allowed" : "pointer",
-              }}
-            >
-              {paying ? "Paying…" : `Pay ${rescueQuote!.costSKR} SKR`}
-            </button>
-
-            <button
-              onClick={resetStreak}
-              disabled={resetting || paying}
-              style={{
-                width: "100%",
-                padding: "12px",
-                borderRadius: 12,
-                marginTop: 10,
-                background: "transparent",
-                border: "1px solid rgba(255,255,255,0.18)",
-                color: "#e5e7eb",
-                fontWeight: 900,
-                cursor: resetting || paying ? "not-allowed" : "pointer",
-              }}
-            >
-              {resetting ? "Resetting…" : "Reset streak (free)"}
-            </button>
-
-            <div
-              style={{
-                marginTop: 10,
-                opacity: 0.75,
-                fontSize: 12,
-                lineHeight: 1.4,
-              }}
-            >
-              Resets your streak to <strong>1</strong> but{" "}
-              <strong>refreshes rescues</strong>. You still keep your points.
-            </div>
-
-            <div style={{ marginTop: 10, opacity: 0.7, fontSize: 12 }}>
-              Creates token accounts if needed, transfers SKR, then verifies
-              on-chain.
-            </div>
-          </div>
-        )}
-
         <button
           onClick={checkIn}
           disabled={!sessionVerified || showRescueCard}
@@ -718,7 +640,7 @@ export default function Home() {
         </button>
 
         {msg && (
-          <div style={{ textAlign: "center", opacity: 0.9, marginBottom: 10 }}>
+          <div style={{ textAlign: "center", opacity: 0.95, marginBottom: 10 }}>
             {msg}
           </div>
         )}
