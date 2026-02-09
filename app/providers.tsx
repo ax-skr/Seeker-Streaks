@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
+import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import "@solana/wallet-adapter-react-ui/styles.css";
 
 // ✅ Solana Mobile adapter ONLY (Seeker / Seed Vault)
@@ -12,7 +13,9 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   const [origin, setOrigin] = useState<string>("");
 
   useEffect(() => {
-    if (typeof window !== "undefined") setOrigin(window.location.origin);
+    if (typeof window !== "undefined") {
+      setOrigin(window.location.origin);
+    }
   }, []);
 
   const wallets = useMemo(() => {
@@ -35,12 +38,18 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     const addressSelector =
       typeof createDefaultAddressSelector === "function"
         ? createDefaultAddressSelector()
-        : { select: async (addresses: string[]) => addresses?.[0] };
+        : {
+            select: async (addresses: string[]) => addresses?.[0],
+          };
 
     const authorizationResultCache =
       typeof createDefaultAuthorizationResultCache === "function"
         ? createDefaultAuthorizationResultCache()
-        : { clear: async () => {}, get: async () => null, set: async () => {} };
+        : {
+            clear: async () => {},
+            get: async () => null,
+            set: async () => {},
+          };
 
     return [
       new MobileAdapterCtor({
@@ -58,7 +67,8 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ConnectionProvider endpoint={endpoint}>
       <WalletProvider wallets={wallets} autoConnect>
-        {children}
+        {/* 🔑 REQUIRED for WalletMultiButton */}
+        <WalletModalProvider>{children}</WalletModalProvider>
       </WalletProvider>
     </ConnectionProvider>
   );
