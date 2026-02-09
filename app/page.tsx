@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
-import { WalletReadyState } from "@solana/wallet-adapter-base";
 import {
   Connection,
   PublicKey,
@@ -60,84 +59,6 @@ function shortWallet(w?: string | null) {
   return `${w.slice(0, 4)}…${w.slice(-4)}`;
 }
 
-// ✅ Debug banner for MWA / adapter readiness
-function WalletDebugBanner() {
-  const { wallets, wallet, publicKey, connected, connecting } = useWallet();
-
-  const adapter: any = wallet?.adapter;
-  const readyState = adapter?.readyState;
-
-  const adapterName = adapter?.name || "None";
-
-  const readyLabel =
-    readyState === WalletReadyState.Installed
-      ? "Installed"
-      : readyState === WalletReadyState.Loadable
-      ? "Loadable"
-      : readyState === WalletReadyState.NotDetected
-      ? "NotDetected"
-      : readyState === WalletReadyState.Unsupported
-      ? "Unsupported"
-      : String(readyState ?? "Unknown");
-
-  const anyReady = (wallets || []).some((w: any) => {
-    const rs = w?.adapter?.readyState;
-    return rs === WalletReadyState.Installed || rs === WalletReadyState.Loadable;
-  });
-
-  const isSolanaMobileUA =
-    typeof navigator !== "undefined" &&
-    /SolanaMobile|SeedVault|Seeker/i.test(navigator.userAgent);
-
-  const walletCount = wallets?.length ?? 0;
-
-  return (
-    <div
-      style={{
-        background: "rgba(0,0,0,0.35)",
-        border: "1px solid rgba(255,255,255,0.14)",
-        borderRadius: 12,
-        padding: 12,
-        marginBottom: 12,
-        fontSize: 12,
-        lineHeight: 1.4,
-      }}
-    >
-      <div style={{ fontWeight: 900, marginBottom: 6 }}>Debug (MWA)</div>
-
-      <div>
-        UA SolanaMobile/SeedVault: <strong>{String(isSolanaMobileUA)}</strong>
-      </div>
-      <div>
-        wallets (adapter-react): <strong>{walletCount}</strong>
-      </div>
-      <div>
-        any wallet ready: <strong>{String(!!anyReady)}</strong>
-      </div>
-
-      <div style={{ marginTop: 6 }}>
-        active adapter: <strong>{adapterName}</strong> • readyState:{" "}
-        <strong>{readyLabel}</strong>
-      </div>
-
-      <div style={{ marginTop: 6 }}>
-        connected: <strong>{String(connected)}</strong> • connecting:{" "}
-        <strong>{String(connecting)}</strong> • pubkey:{" "}
-        <strong>
-          {publicKey ? publicKey.toBase58().slice(0, 6) + "…" : "none"}
-        </strong>
-      </div>
-
-      {!anyReady && (
-        <div style={{ marginTop: 8, opacity: 0.9 }}>
-          ⚠️ <strong>No MWA provider detected.</strong> Open/update your Seeker
-          wallet app (or an MWA-capable wallet) once, then retry.
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ---------- types ----------
 type RescueQuote = {
   ok: boolean;
@@ -156,11 +77,12 @@ export default function Home() {
   const {
     publicKey,
     connected,
+    connecting,
+    disconnecting,
     signMessage,
     wallet,
     wallets,
     select,
-    connecting,
   } = useWallet();
 
   const { connection } = useConnection(); // kept if you use it elsewhere
@@ -191,67 +113,78 @@ export default function Home() {
 
   const walletStr = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
 
-  // ✅ FIX: auto-select the ONLY wallet (MWA) before connect()
+  // --- Debug helpers ---
+  const uaSolanaMobile =
+    typeof navigator !== "undefined"
+      ? /SolanaMobile|SeedVault|Seeker/i.test(navigator.userAgent)
+      : false;
+
+  const activeAdapter: any = wallet?.adapter;
+  const activeName = activeAdapter?.name ?? "None";
+  const readyState = activeAdapter?.readyState ?? "Unknown";
+  const anyReady = wallets?.some((w) => w.adapter?.readyState) ?? false;
+
+  // ✅ FIX: Explicitly select the only wallet adapter before connecting
   const handleConnect = useCallback(async () => {
     try {
       setMsg("");
 
-      // If already connecting, do nothing
-      if (connecting) return;
-
-      // Disconnect if connected
+      // If already connected -> disconnect
       if (connected) {
-        const current: any = wallet?.adapter;
-        if (current?.disconnect) await current.disconnect();
+        if (activeAdapter?.disconnect) {
+          await activeAdapter.disconnect();
+        }
         return;
       }
 
-      // If no active wallet selected yet, select the first (and only) wallet
+      // If no wallet selected yet, but we have exactly 1 wallet available -> select it
       if (!wallet?.adapter) {
-        const first = wallets?.[0]?.adapter as any;
-        if (!first) {
-          setMsg("No wallet adapter available.");
+        if (!wallets || wallets.length === 0) {
+          setMsg("No wallet adapters available.");
           return;
         }
 
-        // Only select if it looks usable
-        const rs = first.readyState;
-        const ready =
-          rs === WalletReadyState.Installed || rs === WalletReadyState.Loadable;
+        if (wallets.length === 1) {
+          const only = wallets[0]?.adapter;
+          if (!only?.name) {
+            setMsg("Wallet adapter not ready (no adapter name).");
+            return;
+          }
 
-        if (!ready) {
-          setMsg(`Wallet not ready (readyState=${String(rs)}).`);
+          // Select it in WalletProvider state
+          select(only.name);
+
+          // Tiny tick so state can propagate before connect (important on mobile)
+          await new Promise((r) => setTimeout(r, 50));
+
+          // Call connect on the actual adapter instance we have
+          if (typeof only.connect !== "function") {
+            setMsg("Wallet cannot connect (connect missing).");
+            return;
+          }
+
+          await only.connect();
           return;
         }
 
-        // Select it for adapter-react state
-        select(first.name);
-
-        // Immediately call connect on the same adapter instance (no waiting for re-render)
-        if (typeof first.connect !== "function") {
-          setMsg("Wallet cannot connect (connect missing).");
-          return;
-        }
-
-        await first.connect();
+        // If somehow more than one exists (you said you don't want this)
+        setMsg("Multiple wallets detected — selection UI removed.");
         return;
       }
 
-      // Normal path: active adapter exists
-      const adapter: any = wallet.adapter;
-
-      if (typeof adapter.connect !== "function") {
+      // Wallet is selected already, connect with it
+      if (typeof activeAdapter?.connect !== "function") {
         setMsg("Wallet cannot connect (connect missing).");
         return;
       }
 
-      await adapter.connect();
+      await activeAdapter.connect();
     } catch (e: any) {
       console.error(e);
       const m = e?.message ? String(e.message) : String(e);
       setMsg(`Connect failed: ${m}`);
     }
-  }, [wallet, wallets, select, connected, connecting]);
+  }, [connected, activeAdapter, wallet, wallets, select]);
 
   // ---------- rescue quote ----------
   const loadRescueQuote = useCallback(async () => {
@@ -582,7 +515,30 @@ export default function Home() {
           Daily streaks for Solana Seeker users
         </p>
 
-        <WalletDebugBanner />
+        {/* ✅ Debug banner */}
+        <div
+          style={{
+            background: "rgba(2,6,23,0.8)",
+            border: "1px solid rgba(255,255,255,0.10)",
+            borderRadius: 14,
+            padding: 12,
+            marginBottom: 12,
+            fontSize: 12,
+            lineHeight: 1.45,
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          <div style={{ fontWeight: 900, marginBottom: 6 }}>Debug (MWA)</div>
+          <div>UA SolanaMobile/SeedVault: {String(uaSolanaMobile)}</div>
+          <div>wallets (adapter-react): {wallets?.length ?? 0}</div>
+          <div>selected wallet: {wallet?.adapter?.name ?? "None"}</div>
+          <div>active adapter: {activeName} • readyState: {String(readyState)}</div>
+          <div>
+            connected: {String(connected)} • connecting: {String(connecting)} •
+            disconnecting: {String(disconnecting)} • pubkey:{" "}
+            {walletStr ? shortWallet(walletStr) : "none"}
+          </div>
+        </div>
 
         <div
           style={{
@@ -593,8 +549,10 @@ export default function Home() {
             marginBottom: 16,
           }}
         >
+          {/* ✅ Direct connect */}
           <button
             onClick={handleConnect}
+            disabled={connecting || disconnecting}
             style={{
               width: "100%",
               padding: "12px",
@@ -603,10 +561,11 @@ export default function Home() {
               border: "none",
               color: "#020617",
               fontWeight: 700,
-              cursor: "pointer",
+              cursor: connecting || disconnecting ? "not-allowed" : "pointer",
+              opacity: connecting || disconnecting ? 0.7 : 1,
             }}
           >
-            {connected ? "Disconnect wallet" : "Connect wallet"}
+            {connected ? "Disconnect wallet" : connecting ? "Connecting…" : "Connect wallet"}
           </button>
 
           {connected && (
