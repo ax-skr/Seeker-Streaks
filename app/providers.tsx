@@ -2,7 +2,6 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
-import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
 import "@solana/wallet-adapter-react-ui/styles.css";
 
 // ✅ Solana Mobile adapter ONLY (Seeker / Seed Vault)
@@ -10,7 +9,6 @@ import * as solanaMobile from "@solana-mobile/wallet-adapter-mobile";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const endpoint = "https://api.mainnet-beta.solana.com";
-
   const [origin, setOrigin] = useState<string>("");
 
   useEffect(() => {
@@ -60,7 +58,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ConnectionProvider endpoint={endpoint}>
       <WalletProvider wallets={wallets} autoConnect>
-        <WalletModalProvider>{children}</WalletModalProvider>
+        {children}
       </WalletProvider>
     </ConnectionProvider>
   );

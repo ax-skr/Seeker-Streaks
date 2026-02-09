@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import {
@@ -15,11 +14,6 @@ import {
   createTransferCheckedInstruction,
   createAssociatedTokenAccountIdempotentInstruction,
 } from "@solana/spl-token";
-
-const WalletMultiButton = dynamic(
-  async () => (await import("@solana/wallet-adapter-react-ui")).WalletMultiButton,
-  { ssr: false }
-);
 
 type BlockhashResult = {
   conn: Connection;
@@ -108,6 +102,37 @@ export default function Home() {
   }, [publicKey]);
 
   const walletStr = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
+
+  // ✅ FIX: don't use WalletMultiButton (modal). Connect directly via the adapter.
+  const handleConnect = useCallback(async () => {
+    try {
+      setMsg("");
+      const adapter: any = wallet?.adapter;
+
+      if (!adapter) {
+        setMsg("Wallet adapter not ready.");
+        return;
+      }
+
+      if (connected) {
+        if (typeof adapter.disconnect === "function") {
+          await adapter.disconnect();
+        }
+        return;
+      }
+
+      if (typeof adapter.connect !== "function") {
+        setMsg("Wallet cannot connect (connect missing).");
+        return;
+      }
+
+      await adapter.connect();
+    } catch (e: any) {
+      console.error(e);
+      const m = e?.message ? String(e.message) : String(e);
+      setMsg(`Connect failed: ${m}`);
+    }
+  }, [wallet, connected]);
 
   // ---------- rescue quote ----------
   const loadRescueQuote = useCallback(async () => {
@@ -447,7 +472,22 @@ export default function Home() {
             marginBottom: 16,
           }}
         >
-          <WalletMultiButton />
+          {/* ✅ FIX: replace WalletMultiButton with direct connect */}
+          <button
+            onClick={handleConnect}
+            style={{
+              width: "100%",
+              padding: "12px",
+              borderRadius: 10,
+              background: "linear-gradient(90deg,#7c3aed,#22d3ee)",
+              border: "none",
+              color: "#020617",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            {connected ? "Disconnect wallet" : "Connect wallet"}
+          </button>
 
           {connected && (
             <div style={{ marginTop: 12, fontSize: 14, opacity: 0.85 }}>
@@ -569,13 +609,21 @@ export default function Home() {
               {resetting ? "Resetting…" : "Reset streak (free)"}
             </button>
 
-            <div style={{ marginTop: 10, opacity: 0.75, fontSize: 12, lineHeight: 1.4 }}>
-              Resets your streak to <strong>1</strong> but <strong>refreshes rescues</strong>.
-              You still keep your points.
+            <div
+              style={{
+                marginTop: 10,
+                opacity: 0.75,
+                fontSize: 12,
+                lineHeight: 1.4,
+              }}
+            >
+              Resets your streak to <strong>1</strong> but{" "}
+              <strong>refreshes rescues</strong>. You still keep your points.
             </div>
 
             <div style={{ marginTop: 10, opacity: 0.7, fontSize: 12 }}>
-              Creates token accounts if needed, transfers SKR, then verifies on-chain.
+              Creates token accounts if needed, transfers SKR, then verifies
+              on-chain.
             </div>
           </div>
         )}
