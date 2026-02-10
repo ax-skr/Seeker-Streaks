@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Link from "next/link";
-import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { WalletReadyState } from "@solana/wallet-adapter-base";
+
 import {
   Connection,
   PublicKey,
@@ -59,22 +61,11 @@ function shortWallet(w?: string | null) {
   return `${w.slice(0, 4)}…${w.slice(-4)}`;
 }
 
-function isProbablySolanaMobileEnv(): boolean {
+// Not perfect, but useful for the banner
+function uaHasSolanaMobileHints(): boolean {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent || "";
-  return /SolanaMobile|SeedVault/i.test(ua);
-}
-
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-function safeString(v: any) {
-  try {
-    return String(v);
-  } catch {
-    return "Unknown";
-  }
+  return /SolanaMobile|SeedVault|Seeker/i.test(ua);
 }
 
 // ---------- types ----------
@@ -97,13 +88,13 @@ export default function Home() {
     connected,
     connecting,
     disconnecting,
-    signMessage,
     wallet,
     wallets,
     select,
+    connect,
+    disconnect,
+    signMessage,
   } = useWallet();
-
-  const { connection } = useConnection(); // kept if you use it elsewhere
 
   const [mounted, setMounted] = useState(false);
   const [sessionVerified, setSessionVerified] = useState(false);
@@ -118,13 +109,14 @@ export default function Home() {
   const [paying, setPaying] = useState(false);
   const [resetting, setResetting] = useState(false);
 
-  // debug / connect state
-  const [connectErr, setConnectErr] = useState<string>("");
+  // debug + UX safety
   const [uaMobile, setUaMobile] = useState(false);
+  const [connectErr, setConnectErr] = useState<string>("");
   const [uiBusy, setUiBusy] = useState(false);
+  const connectAttemptId = useRef(0);
 
   useEffect(() => setMounted(true), []);
-  useEffect(() => setUaMobile(isProbablySolanaMobileEnv()), []);
+  useEffect(() => setUaMobile(uaHasSolanaMobileHints()), []);
 
   useEffect(() => {
     setSessionVerified(false);
@@ -134,134 +126,156 @@ export default function Home() {
     lastResolvedWallet.current = null;
     setMsg("");
     setConnectErr("");
+    setUiBusy(false);
   }, [publicKey]);
 
   const walletStr = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
 
-  // IMPORTANT: force-select the only wallet if none selected
-  useEffect(() => {
-    if (!mounted) return;
-    if (wallet) return;
-    if (!wallets?.length) return;
+  /**
+   * Pick a wallet WITHOUT showing options:
+   * 1) Prefer Mobile Wallet Adapter (Seed Vault) when it is installed/loadable
+   * 2) Otherwise fallback to any installed injected wallet (Phantom/Backpack/etc.)
+   */
+  const preferredWalletName = useMemo(() => {
+    if (!wallets || wallets.length === 0) return null;
 
-    const only = wallets[0]?.adapter?.name;
-    if (only) {
-      try {
-        select(only);
-      } catch {}
-    }
-  }, [mounted, wallet, wallets, select]);
+    const mwa = wallets.find((w) => {
+      const name = w.adapter?.name || "";
+      const rs = w.adapter?.readyState;
+      return (
+        /mobile wallet adapter/i.test(name) &&
+        (rs === WalletReadyState.Installed || rs === WalletReadyState.Loadable)
+      );
+    });
+    if (mwa?.adapter?.name) return mwa.adapter.name;
 
-  const activeAdapter: any = useMemo(() => {
-    return wallet?.adapter ?? wallets?.[0]?.adapter ?? null;
-  }, [wallet, wallets]);
+    // fallback: first installed wallet (Phantom/Backpack/etc.)
+    const installed = wallets.find(
+      (w) => w.adapter?.readyState === WalletReadyState.Installed
+    );
+    return installed?.adapter?.name ?? wallets[0]?.adapter?.name ?? null;
+  }, [wallets]);
 
   const activeAdapterName = useMemo(
-    () => safeString(activeAdapter?.name ?? "None"),
-    [activeAdapter]
+    () => String(wallet?.adapter?.name ?? "None"),
+    [wallet]
   );
-
   const activeReadyState = useMemo(
-    () => safeString(activeAdapter?.readyState ?? "Unknown"),
-    [activeAdapter]
+    () => String(wallet?.adapter?.readyState ?? "Unknown"),
+    [wallet]
   );
 
-  // ---------- HARD RESET (kills stuck sessions) ----------
-  const resetWalletSession = useCallback(async () => {
+  const hardResetWalletSession = useCallback(async () => {
     try {
-      setUiBusy(true);
       setMsg("");
       setConnectErr("");
+      setUiBusy(true);
 
-      const adapter: any = activeAdapter;
-
-      // try a clean disconnect
-      if (adapter?.disconnect) {
-        try {
-          await adapter.disconnect();
-        } catch {}
-      }
-
-      // clear wallet-adapter persisted selection (these are common keys)
+      // 1) Disconnect if possible
       try {
-        localStorage.removeItem("walletName");
-        localStorage.removeItem("selectedWallet");
-        localStorage.removeItem("walletAdapter");
-        localStorage.removeItem("wallet-adapter");
+        if (connected) await disconnect();
       } catch {}
 
-      // force re-select of the only wallet after reload
-      await sleep(150);
+      // 2) Clear the wallet-adapter localStorage keys (this fixes stuck "dark overlay" / half-sessions)
+      try {
+        if (typeof window !== "undefined") {
+          const keys = Object.keys(window.localStorage);
+          for (const k of keys) {
+            if (k.startsWith("walletAdapter") || k.includes("walletName")) {
+              window.localStorage.removeItem(k);
+            }
+          }
+        }
+      } catch {}
 
-      // reload clears any stale MWA iframe/intent state
-      window.location.reload();
+      // 3) Unselect wallet (best-effort)
+      try {
+        // @ts-ignore - not always present in typings
+        if (typeof (window as any)?.localStorage !== "undefined") {
+          // wallet-adapter uses "walletName" in many setups
+          window.localStorage.removeItem("walletName");
+        }
+      } catch {}
+
+      setMsg("Wallet session reset. Now try Connect wallet again.");
     } finally {
       setUiBusy(false);
     }
-  }, [activeAdapter]);
+  }, [connected, disconnect]);
 
-  // ---------- CONNECT (with timeout + better errors) ----------
   const handleConnect = useCallback(async () => {
-    if (uiBusy) return;
+    const attempt = ++connectAttemptId.current;
 
     try {
-      setUiBusy(true);
       setMsg("");
       setConnectErr("");
+      setUiBusy(true);
 
-      // ensure selection exists
-      if (!wallet && wallets?.[0]?.adapter?.name) {
-        try {
-          select(wallets[0].adapter.name);
-        } catch {}
-      }
-
-      const adapter: any = activeAdapter;
-
-      if (!adapter) {
-        setMsg("Wallet adapter not ready (no adapter instance).");
-        return;
-      }
-
-      // if already connected -> disconnect
       if (connected) {
-        if (typeof adapter.disconnect === "function") {
-          await adapter.disconnect();
-        }
+        await disconnect();
+        setUiBusy(false);
         return;
       }
 
-      if (typeof adapter.connect !== "function") {
-        setMsg("Wallet cannot connect (connect missing).");
+      if (!preferredWalletName) {
+        setMsg("No wallet adapters detected.");
+        setUiBusy(false);
         return;
       }
 
-      // kick off connect
-      await adapter.connect();
-
-      // wait a moment for pubkey to actually populate
-      // (MWA sometimes resolves connect before publicKey updates)
-      const start = Date.now();
-      while (!publicKey && Date.now() - start < 6000) {
-        await sleep(150);
+      // Make sure the preferred wallet is selected
+      if (!wallet || wallet.adapter?.name !== preferredWalletName) {
+        select(preferredWalletName);
+        // give React a tick to apply the selection
+        await new Promise((r) => setTimeout(r, 50));
       }
+
+      // Now connect through the wallet-adapter hook (best compatibility)
+      await connect();
+
+      // Safety: if connect() resolves but we still have no publicKey, treat it as a failed auth UI handoff
+      // This is the exact “connect returned but no pubkey” case you’re seeing.
+      await new Promise((r) => setTimeout(r, 700));
+
+      if (connectAttemptId.current !== attempt) return;
 
       if (!publicKey) {
+        // This happens when MWA couldn’t complete Seed Vault UI.
+        // If we’re not in a Solana Mobile trusted context, it’s common.
         const hint =
-          "Connect returned but no public key. This usually means the wallet authorization UI didn't complete. " +
-          "Try Reset wallet session, then connect again. If you're in a normal browser, try inside the wallet browser / your TWA.";
-        setMsg(hint);
-        return;
+          /mobile wallet adapter/i.test(preferredWalletName) && !uaMobile
+            ? "MWA usually needs your TWA (installed Seeker app) or a wallet in-app browser."
+            : "Wallet authorization UI may not have completed.";
+
+        setConnectErr(
+          `Connected session returned but no public key. ${hint}`
+        );
+
+        // Best-effort cleanup so the UI doesn't get stuck
+        try {
+          await disconnect();
+        } catch {}
       }
     } catch (e: any) {
-      console.error(e);
       const m = e?.message ? String(e.message) : String(e);
       setConnectErr(m);
       setMsg(`Connect failed: ${m}`);
+      try {
+        await disconnect();
+      } catch {}
     } finally {
       setUiBusy(false);
     }
-  }, [uiBusy, wallet, wallets, select, activeAdapter, connected, publicKey]);
+  }, [
+    connected,
+    disconnect,
+    wallet,
+    select,
+    connect,
+    preferredWalletName,
+    publicKey,
+    uaMobile,
+  ]);
 
   // ---------- rescue quote ----------
   const loadRescueQuote = useCallback(async () => {
@@ -473,7 +487,7 @@ export default function Home() {
       return;
     }
 
-    const adapter: any = activeAdapter;
+    const adapter: any = wallet?.adapter;
     if (!adapter?.signTransaction) {
       setMsg("Wallet cannot sign transactions (signTransaction missing).");
       return;
@@ -522,7 +536,6 @@ export default function Home() {
       }).compileToV0Message();
 
       const vtx = new VersionedTransaction(msgV0);
-
       const signed: VersionedTransaction = await adapter.signTransaction(vtx);
 
       const sig = await rpcConn.sendRawTransaction(signed.serialize(), {
@@ -563,7 +576,7 @@ export default function Home() {
     } finally {
       setPaying(false);
     }
-  }, [publicKey, walletStr, rescueQuote, activeAdapter, loadStatus, loadRescueQuote]);
+  }, [publicKey, walletStr, rescueQuote, wallet, loadStatus, loadRescueQuote]);
 
   if (!mounted) return null;
 
@@ -605,12 +618,12 @@ export default function Home() {
             whiteSpace: "pre-wrap",
           }}
         >
-          <div style={{ fontWeight: 900, marginBottom: 6 }}>Debug (MWA)</div>
-          <div>UA SolanaMobile/SeedVault: {String(uaMobile)}</div>
+          <div style={{ fontWeight: 900, marginBottom: 6 }}>Debug</div>
+          <div>UA hints SolanaMobile/SeedVault/Seeker: {String(uaMobile)}</div>
           <div>wallets (adapter-react): {wallets?.length ?? 0}</div>
-          <div>selected wallet: {wallet?.adapter?.name ?? "None"}</div>
+          <div>preferred wallet: {preferredWalletName ?? "None"}</div>
           <div>
-            active adapter: {activeAdapterName} • readyState: {activeReadyState}
+            selected wallet: {activeAdapterName} • readyState: {activeReadyState}
           </div>
           <div>
             connected: {String(connected)} • connecting: {String(connecting)} •
@@ -647,11 +660,11 @@ export default function Home() {
               opacity: uiBusy ? 0.7 : 1,
             }}
           >
-            {connected ? "Disconnect wallet" : "Connect wallet"}
+            {connected ? "Disconnect wallet" : uiBusy ? "Connecting…" : "Connect wallet"}
           </button>
 
           <button
-            onClick={resetWalletSession}
+            onClick={hardResetWalletSession}
             disabled={uiBusy}
             style={{
               marginTop: 10,
@@ -671,8 +684,7 @@ export default function Home() {
 
           {connected && (
             <div style={{ marginTop: 12, fontSize: 14, opacity: 0.85 }}>
-              Connected:{" "}
-              <span style={{ fontWeight: 800 }}>{connectedLabel}</span>
+              Connected: <span style={{ fontWeight: 800 }}>{connectedLabel}</span>
             </div>
           )}
 
@@ -690,6 +702,7 @@ export default function Home() {
                 color: "#020617",
                 fontWeight: 700,
                 cursor: "pointer",
+                opacity: verifying ? 0.7 : 1,
               }}
             >
               {verifying ? "Verifying…" : "Verify wallet"}
@@ -702,6 +715,29 @@ export default function Home() {
             </div>
           )}
         </div>
+
+        {connectErr && (
+          <div
+            style={{
+              marginBottom: 14,
+              padding: 12,
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(2,6,23,0.6)",
+              fontSize: 13,
+              lineHeight: 1.4,
+              opacity: 0.95,
+            }}
+          >
+            {connectErr}
+            {!uaMobile && /mobile wallet adapter/i.test(preferredWalletName || "") ? (
+              <div style={{ marginTop: 8, opacity: 0.85 }}>
+                Tip: For Seed Vault (MWA) the best path is your <strong>TWA</strong> (installed Seeker app).
+                Chrome may fall back to injected wallets depending on device setup.
+              </div>
+            ) : null}
+          </div>
+        )}
 
         {status && (
           <div
@@ -752,6 +788,7 @@ export default function Home() {
                 color: "#020617",
                 fontWeight: 900,
                 cursor: paying || resetting ? "not-allowed" : "pointer",
+                opacity: paying || resetting ? 0.7 : 1,
               }}
             >
               {paying ? "Paying…" : `Pay ${rescueQuote!.costSKR} SKR`}
@@ -770,10 +807,15 @@ export default function Home() {
                 color: "#e5e7eb",
                 fontWeight: 900,
                 cursor: resetting || paying ? "not-allowed" : "pointer",
+                opacity: resetting || paying ? 0.7 : 1,
               }}
             >
               {resetting ? "Resetting…" : "Reset streak (free)"}
             </button>
+
+            <div style={{ marginTop: 10, opacity: 0.75, fontSize: 12 }}>
+              Resets streak to <strong>1</strong> but refreshes rescues.
+            </div>
           </div>
         )}
 
