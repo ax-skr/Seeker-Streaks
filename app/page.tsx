@@ -194,7 +194,7 @@ export default function Home() {
     }
   }, [connected, disconnect]);
 
-  const handleConnect = useCallback(async () => {
+    const handleConnect = useCallback(async () => {
     const attempt = ++connectAttemptId.current;
 
     try {
@@ -208,30 +208,29 @@ export default function Home() {
       }
 
       if (!preferredWalletName) {
-        setConnectErr("No wallet adapters found (MWA missing).");
+        setMsg("No wallet adapters detected.");
         return;
       }
 
-      // Ensure selected
+      // Ensure MWA is selected
       if (!wallet || wallet.adapter?.name !== preferredWalletName) {
         select(preferredWalletName);
-        await new Promise((r) => setTimeout(r, 50));
+        await new Promise((r) => setTimeout(r, 150));
       }
 
-      // Connect
       await connect();
 
-      // Wait a moment for publicKey to populate
-      await new Promise((r) => setTimeout(r, 700));
-
-      if (connectAttemptId.current !== attempt) return;
+      // Give the Android handoff time (Seed Vault can be slow)
+      for (let i = 0; i < 10; i++) {
+        if (connectAttemptId.current !== attempt) return;
+        if (publicKey) break;
+        await new Promise((r) => setTimeout(r, 300));
+      }
 
       if (!publicKey) {
         setConnectErr(
-          "Connected session returned but no public key. This usually means Seed Vault authorization did not complete. Try 'Reset wallet session' and then connect again (best inside the installed Seeker TWA)."
+          "Connected session returned but no public key. This usually means the Seed Vault/wallet approval screen did not complete on the device. Force close the wallet app + Seeker Streaks app, open the wallet first, then try Connect again."
         );
-
-        // cleanup so it doesn't get stuck
         try {
           await disconnect();
         } catch {}
