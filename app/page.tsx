@@ -65,12 +65,16 @@ function isProbablySolanaMobileEnv(): boolean {
   return /SolanaMobile|SeedVault/i.test(ua);
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number, label = "Timed out") {
-  let t: any;
-  const timeout = new Promise<T>((_, rej) => {
-    t = setTimeout(() => rej(new Error(label)), ms);
-  });
-  return Promise.race([p, timeout]).finally(() => clearTimeout(t));
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function safeString(v: any) {
+  try {
+    return String(v);
+  } catch {
+    return "Unknown";
+  }
 }
 
 // ---------- types ----------
@@ -99,8 +103,7 @@ export default function Home() {
     select,
   } = useWallet();
 
-  // kept if you use it elsewhere
-  const { connection } = useConnection();
+  const { connection } = useConnection(); // kept if you use it elsewhere
 
   const [mounted, setMounted] = useState(false);
   const [sessionVerified, setSessionVerified] = useState(false);
@@ -115,7 +118,7 @@ export default function Home() {
   const [paying, setPaying] = useState(false);
   const [resetting, setResetting] = useState(false);
 
-  // debug
+  // debug / connect state
   const [connectErr, setConnectErr] = useState<string>("");
   const [uaMobile, setUaMobile] = useState(false);
   const [uiBusy, setUiBusy] = useState(false);
@@ -135,17 +138,16 @@ export default function Home() {
 
   const walletStr = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
 
-  // If there's only 1 wallet, force-select it so wallet.adapter is never "None"
+  // IMPORTANT: force-select the only wallet if none selected
   useEffect(() => {
     if (!mounted) return;
     if (wallet) return;
-    if (!wallets || wallets.length === 0) return;
+    if (!wallets?.length) return;
 
-    const first = wallets[0];
-    const name = first?.adapter?.name;
-    if (name) {
+    const only = wallets[0]?.adapter?.name;
+    if (only) {
       try {
-        select(name);
+        select(only);
       } catch {}
     }
   }, [mounted, wallet, wallets, select]);
@@ -155,49 +157,59 @@ export default function Home() {
   }, [wallet, wallets]);
 
   const activeAdapterName = useMemo(
-    () => String(activeAdapter?.name ?? "None"),
+    () => safeString(activeAdapter?.name ?? "None"),
     [activeAdapter]
   );
 
   const activeReadyState = useMemo(
-    () => String(activeAdapter?.readyState ?? "Unknown"),
+    () => safeString(activeAdapter?.readyState ?? "Unknown"),
     [activeAdapter]
   );
 
-  // Reset wallet-adapter persisted selection + try to hard-disconnect
+  // ---------- HARD RESET (kills stuck sessions) ----------
   const resetWalletSession = useCallback(async () => {
     try {
+      setUiBusy(true);
       setMsg("");
       setConnectErr("");
 
-      // wallet-adapter default storage key:
-      // https://github.com/solana-labs/wallet-adapter uses "walletName"
-      if (typeof window !== "undefined") {
+      const adapter: any = activeAdapter;
+
+      // try a clean disconnect
+      if (adapter?.disconnect) {
         try {
-          window.localStorage.removeItem("walletName");
+          await adapter.disconnect();
         } catch {}
       }
 
-      if (activeAdapter?.disconnect) {
-        try {
-          await activeAdapter.disconnect();
-        } catch {}
-      }
+      // clear wallet-adapter persisted selection (these are common keys)
+      try {
+        localStorage.removeItem("walletName");
+        localStorage.removeItem("selectedWallet");
+        localStorage.removeItem("walletAdapter");
+        localStorage.removeItem("wallet-adapter");
+      } catch {}
 
-      // Force a clean reload (this clears any half-baked MWA state in the page)
-      if (typeof window !== "undefined") window.location.reload();
-    } catch (e: any) {
-      setConnectErr(e?.message ? String(e.message) : String(e));
+      // force re-select of the only wallet after reload
+      await sleep(150);
+
+      // reload clears any stale MWA iframe/intent state
+      window.location.reload();
+    } finally {
+      setUiBusy(false);
     }
   }, [activeAdapter]);
 
-  // Connect directly via adapter (no modal) with a timeout so it can’t hang forever
+  // ---------- CONNECT (with timeout + better errors) ----------
   const handleConnect = useCallback(async () => {
+    if (uiBusy) return;
+
     try {
+      setUiBusy(true);
       setMsg("");
       setConnectErr("");
 
-      // Ensure selection exists
+      // ensure selection exists
       if (!wallet && wallets?.[0]?.adapter?.name) {
         try {
           select(wallets[0].adapter.name);
@@ -211,10 +223,10 @@ export default function Home() {
         return;
       }
 
+      // if already connected -> disconnect
       if (connected) {
         if (typeof adapter.disconnect === "function") {
-          setUiBusy(true);
-          await withTimeout(adapter.disconnect(), 8000, "Disconnect timed out");
+          await adapter.disconnect();
         }
         return;
       }
@@ -224,15 +236,22 @@ export default function Home() {
         return;
       }
 
-      // Important: only run from a user tap + enforce timeout
-      setUiBusy(true);
-      await withTimeout(adapter.connect(), 15000, "Connect timed out");
+      // kick off connect
+      await adapter.connect();
 
-      // If connect “returns” but no pubkey, show a clear message
-      if (!adapter?.publicKey && !publicKey) {
-        setMsg(
-          "Connect returned but no public key. If you’re in a normal browser, MWA may not be able to open Seed Vault. Try opening inside the Seeker Wallet browser / your TWA build."
-        );
+      // wait a moment for pubkey to actually populate
+      // (MWA sometimes resolves connect before publicKey updates)
+      const start = Date.now();
+      while (!publicKey && Date.now() - start < 6000) {
+        await sleep(150);
+      }
+
+      if (!publicKey) {
+        const hint =
+          "Connect returned but no public key. This usually means the wallet authorization UI didn't complete. " +
+          "Try Reset wallet session, then connect again. If you're in a normal browser, try inside the wallet browser / your TWA.";
+        setMsg(hint);
+        return;
       }
     } catch (e: any) {
       console.error(e);
@@ -242,7 +261,7 @@ export default function Home() {
     } finally {
       setUiBusy(false);
     }
-  }, [wallet, wallets, select, activeAdapter, connected, publicKey]);
+  }, [uiBusy, wallet, wallets, select, activeAdapter, connected, publicKey]);
 
   // ---------- rescue quote ----------
   const loadRescueQuote = useCallback(async () => {
@@ -595,7 +614,8 @@ export default function Home() {
           </div>
           <div>
             connected: {String(connected)} • connecting: {String(connecting)} •
-            disconnecting: {String(disconnecting)} • pubkey: {walletStr ?? "none"}
+            disconnecting: {String(disconnecting)} • pubkey:{" "}
+            {walletStr ?? "none"}
           </div>
           <div>uiBusy: {String(uiBusy)}</div>
           {connectErr ? (
@@ -627,21 +647,23 @@ export default function Home() {
               opacity: uiBusy ? 0.7 : 1,
             }}
           >
-            {connected ? "Disconnect wallet" : uiBusy ? "Connecting…" : "Connect wallet"}
+            {connected ? "Disconnect wallet" : "Connect wallet"}
           </button>
 
           <button
             onClick={resetWalletSession}
+            disabled={uiBusy}
             style={{
-              width: "100%",
               marginTop: 10,
+              width: "100%",
               padding: "12px",
               borderRadius: 10,
               background: "transparent",
               border: "1px solid rgba(255,255,255,0.18)",
               color: "#e5e7eb",
               fontWeight: 800,
-              cursor: "pointer",
+              cursor: uiBusy ? "not-allowed" : "pointer",
+              opacity: uiBusy ? 0.7 : 1,
             }}
           >
             Reset wallet session
@@ -651,18 +673,6 @@ export default function Home() {
             <div style={{ marginTop: 12, fontSize: 14, opacity: 0.85 }}>
               Connected:{" "}
               <span style={{ fontWeight: 800 }}>{connectedLabel}</span>
-              {skrName && skrName.toLowerCase().endsWith(".skr") && (
-                <span
-                  style={{
-                    marginLeft: 8,
-                    color: "#22d3ee",
-                    fontWeight: 900,
-                    textShadow: "0 0 10px rgba(34,211,238,0.35)",
-                  }}
-                >
-                  •
-                </span>
-              )}
             </div>
           )}
 
@@ -764,23 +774,6 @@ export default function Home() {
             >
               {resetting ? "Resetting…" : "Reset streak (free)"}
             </button>
-
-            <div
-              style={{
-                marginTop: 10,
-                opacity: 0.75,
-                fontSize: 12,
-                lineHeight: 1.4,
-              }}
-            >
-              Resets your streak to <strong>1</strong> but{" "}
-              <strong>refreshes rescues</strong>. You still keep your points.
-            </div>
-
-            <div style={{ marginTop: 10, opacity: 0.7, fontSize: 12 }}>
-              Creates token accounts if needed, transfers SKR, then verifies
-              on-chain.
-            </div>
           </div>
         )}
 
