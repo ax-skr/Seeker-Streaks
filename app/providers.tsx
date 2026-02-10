@@ -9,7 +9,6 @@ import {
   createDefaultAuthorizationResultCache,
 } from "@solana-mobile/wallet-adapter-mobile";
 
-// Small helper type so TS stops screaming across package versions
 type AppIdentity = {
   name: string;
   uri?: string;
@@ -18,15 +17,13 @@ type AppIdentity = {
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const endpoint = useMemo(() => clusterApiUrl("mainnet-beta"), []);
-  const [origin, setOrigin] = useState<string>("https://seeker-streaks.vercel.app");
+  const [origin, setOrigin] = useState("https://seeker-streaks.vercel.app");
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      setOrigin(window.location.origin);
-    }
+    if (typeof window !== "undefined") setOrigin(window.location.origin);
   }, []);
 
-  const wallets = useMemo(() => {
+  const mwaAdapter = useMemo(() => {
     const authorizationResultCache = createDefaultAuthorizationResultCache();
 
     const appIdentity: AppIdentity = {
@@ -35,14 +32,26 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       icon: `${origin}/icon-192.png`,
     };
 
-    // Cast options to avoid version-to-version TS mismatch
-    return [
-      new SolanaMobileWalletAdapter({
-        appIdentity,
-        authorizationResultCache,
-      } as any),
-    ];
+    return new SolanaMobileWalletAdapter({
+      appIdentity,
+      authorizationResultCache,
+    } as any);
   }, [origin]);
+
+  // ✅ IMPORTANT: wallet-adapter-react requires a selected wallet.
+  // If we only have MWA, set it as default selection.
+  useEffect(() => {
+    try {
+      if (typeof window === "undefined") return;
+      const key = "walletName";
+      const existing = window.localStorage.getItem(key);
+      if (!existing) {
+        window.localStorage.setItem(key, mwaAdapter.name);
+      }
+    } catch {}
+  }, [mwaAdapter]);
+
+  const wallets = useMemo(() => [mwaAdapter], [mwaAdapter]);
 
   return (
     <ConnectionProvider endpoint={endpoint}>

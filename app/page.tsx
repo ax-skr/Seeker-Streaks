@@ -48,7 +48,6 @@ async function getWorkingConnectionForBlockhash(): Promise<BlockhashResult> {
   );
 }
 
-// ---------- helpers ----------
 function toBase64(bytes: Uint8Array): string {
   let binary = "";
   bytes.forEach((b) => (binary += String.fromCharCode(b)));
@@ -66,7 +65,6 @@ function uaHasSolanaMobileHints(): boolean {
   return /SolanaMobile|SeedVault|Seeker/i.test(ua);
 }
 
-// ---------- types ----------
 type RescueQuote = {
   ok: boolean;
   verified: boolean;
@@ -88,6 +86,7 @@ export default function Home() {
     disconnecting,
     wallet,
     wallets,
+    select,
     connect,
     disconnect,
     signMessage,
@@ -106,7 +105,6 @@ export default function Home() {
   const [paying, setPaying] = useState(false);
   const [resetting, setResetting] = useState(false);
 
-  // debug + UX safety
   const [uaMobile, setUaMobile] = useState(false);
   const [connectErr, setConnectErr] = useState<string>("");
   const [uiBusy, setUiBusy] = useState(false);
@@ -127,7 +125,17 @@ export default function Home() {
 
   const walletStr = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
 
-  // ✅ FIX: MWA-only flow => just use connect()/disconnect() from the hook.
+  // ✅ Auto-select the only wallet (MWA) so connect() won't throw WalletNotSelectedError
+  useEffect(() => {
+    if (wallet) return;
+    if (!wallets || wallets.length !== 1) return;
+    const only = wallets[0]?.adapter?.name;
+    if (!only) return;
+    try {
+      select(only);
+    } catch {}
+  }, [wallet, wallets, select]);
+
   const handleConnect = useCallback(async () => {
     try {
       setMsg("");
@@ -139,15 +147,24 @@ export default function Home() {
         return;
       }
 
+      // ✅ If not selected but we have exactly 1 wallet, select it first
+      if (!wallet && wallets?.length === 1) {
+        const only = wallets[0]?.adapter?.name;
+        if (only) {
+          try {
+            select(only);
+            await new Promise((r) => setTimeout(r, 50));
+          } catch {}
+        }
+      }
+
       await connect();
 
-      // Small delay to allow Seed Vault handoff to return pubkey
       await new Promise((r) => setTimeout(r, 600));
 
-      // If connect resolves but pubkey is still missing, show a clear message.
       if (!publicKey) {
         setConnectErr(
-          "Connected session returned but no public key. If you're not inside the installed Seeker app (TWA), Seed Vault may not complete the authorization handoff."
+          "Connected session returned but no public key. This usually means Seed Vault authorization did not complete. Try 'Reset wallet session' and then connect again (best inside the installed Seeker TWA)."
         );
         try {
           await disconnect();
@@ -163,7 +180,7 @@ export default function Home() {
     } finally {
       setUiBusy(false);
     }
-  }, [connected, connect, disconnect, publicKey]);
+  }, [connected, disconnect, wallet, wallets, select, connect, publicKey]);
 
   const hardResetWalletSession = useCallback(async () => {
     try {
@@ -193,7 +210,6 @@ export default function Home() {
     }
   }, [connected, disconnect]);
 
-  // ---------- rescue quote ----------
   const loadRescueQuote = useCallback(async () => {
     if (!walletStr) return;
 
@@ -215,7 +231,6 @@ export default function Home() {
     setRescueQuote(q);
   }, [walletStr]);
 
-  // ---------- resolve .skr name ----------
   const resolveSkr = useCallback(async () => {
     if (!walletStr) return;
     if (lastResolvedWallet.current === walletStr) return;
@@ -258,7 +273,6 @@ export default function Home() {
     resolveSkr();
   }, [connected, walletStr, resolveSkr]);
 
-  // ---------- load status ----------
   const loadStatus = useCallback(async () => {
     if (!walletStr) return;
 
@@ -278,7 +292,6 @@ export default function Home() {
     }
   }, [walletStr, loadRescueQuote]);
 
-  // ---------- verify ----------
   const verifyWallet = useCallback(async () => {
     if (!connected || !walletStr || !signMessage) {
       setMsg("Connect a wallet first.");
@@ -323,7 +336,6 @@ export default function Home() {
     }
   }, [connected, walletStr, signMessage, loadStatus, loadRescueQuote]);
 
-  // ---------- check in ----------
   const checkIn = useCallback(async () => {
     if (!walletStr) return;
 
@@ -356,7 +368,6 @@ export default function Home() {
     await loadStatus();
   }, [walletStr, loadStatus, loadRescueQuote]);
 
-  // ---------- reset streak (free) ----------
   const resetStreak = useCallback(async () => {
     if (!walletStr) return;
 
@@ -391,7 +402,6 @@ export default function Home() {
     }
   }, [walletStr, loadStatus, loadRescueQuote]);
 
-  // ---------- pay rescue (VersionedTransaction v0 for Seeker) ----------
   const payRescue = useCallback(async () => {
     if (!publicKey || !walletStr) {
       setMsg("Wallet not ready.");
@@ -440,10 +450,8 @@ export default function Home() {
         ),
       ];
 
-      const { conn: rpcConn, blockhash, lastValidBlockHeight, rpc } =
+      const { conn: rpcConn, blockhash, lastValidBlockHeight } =
         await getWorkingConnectionForBlockhash();
-
-      console.info(`[payRescue] using rpc=${rpc} (v0 tx)`);
 
       const msgV0 = new TransactionMessage({
         payerKey: publicKey,
@@ -478,10 +486,7 @@ export default function Home() {
       });
 
       const commitJson = await commitRes.json().catch(() => ({}));
-
-      if (!commitRes.ok) {
-        throw new Error(commitJson.error || "Commit failed");
-      }
+      if (!commitRes.ok) throw new Error(commitJson.error || "Commit failed");
 
       setMsg(`Rescued ${commitJson.rescuedDays} day(s) ✓`);
       await loadStatus();
@@ -521,7 +526,6 @@ export default function Home() {
           Daily streaks for Solana Seeker users
         </p>
 
-        {/* Debug banner */}
         <div
           style={{
             background: "rgba(2,6,23,0.7)",
@@ -541,13 +545,10 @@ export default function Home() {
           <div>readyState: {String(wallet?.adapter?.readyState ?? "Unknown")}</div>
           <div>
             connected: {String(connected)} • connecting: {String(connecting)} •
-            disconnecting: {String(disconnecting)} • pubkey:{" "}
-            {walletStr ?? "none"}
+            disconnecting: {String(disconnecting)} • pubkey: {walletStr ?? "none"}
           </div>
           <div>uiBusy: {String(uiBusy)}</div>
-          {connectErr ? (
-            <div style={{ marginTop: 6 }}>last error: {connectErr}</div>
-          ) : null}
+          {connectErr ? <div style={{ marginTop: 6 }}>last error: {connectErr}</div> : null}
         </div>
 
         <div
@@ -629,86 +630,6 @@ export default function Home() {
             </div>
           )}
         </div>
-
-        {status && (
-          <div
-            style={{
-              background: "#020617",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 14,
-              padding: 16,
-              marginBottom: 16,
-            }}
-          >
-            <div>
-              🔥 Streak: <strong>{status.streak}</strong>
-            </div>
-            <div>⏳ Missed days: {status.missedDays}</div>
-            <div>🛡️ Rescues left: {status.remainingRescue}</div>
-          </div>
-        )}
-
-        {showRescueCard && (
-          <div
-            style={{
-              background: "#020617",
-              border: "1px solid rgba(255,255,255,0.12)",
-              borderRadius: 14,
-              padding: 16,
-              marginBottom: 16,
-            }}
-          >
-            <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>
-              🛟 Rescue your streak
-            </div>
-
-            <div style={{ opacity: 0.85, marginBottom: 12 }}>
-              You missed <strong>{rescueQuote!.missedDays}</strong> day(s). Pay{" "}
-              <strong>{rescueQuote!.costSKR} SKR</strong> to keep your streak.
-            </div>
-
-            <button
-              onClick={payRescue}
-              disabled={paying || resetting}
-              style={{
-                width: "100%",
-                padding: "14px",
-                borderRadius: 12,
-                background: "linear-gradient(90deg,#22d3ee,#7c3aed)",
-                border: "none",
-                color: "#020617",
-                fontWeight: 900,
-                cursor: paying || resetting ? "not-allowed" : "pointer",
-                opacity: paying || resetting ? 0.7 : 1,
-              }}
-            >
-              {paying ? "Paying…" : `Pay ${rescueQuote!.costSKR} SKR`}
-            </button>
-
-            <button
-              onClick={resetStreak}
-              disabled={resetting || paying}
-              style={{
-                width: "100%",
-                padding: "12px",
-                borderRadius: 12,
-                marginTop: 10,
-                background: "transparent",
-                border: "1px solid rgba(255,255,255,0.18)",
-                color: "#e5e7eb",
-                fontWeight: 900,
-                cursor: resetting || paying ? "not-allowed" : "pointer",
-                opacity: resetting || paying ? 0.7 : 1,
-              }}
-            >
-              {resetting ? "Resetting…" : "Reset streak (free)"}
-            </button>
-
-            <div style={{ marginTop: 10, opacity: 0.75, fontSize: 12 }}>
-              Resets streak to <strong>1</strong> but refreshes rescues.
-            </div>
-          </div>
-        )}
 
         <button
           onClick={checkIn}
