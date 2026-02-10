@@ -1,61 +1,66 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { ReactNode, useMemo } from "react";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
 import { clusterApiUrl } from "@solana/web3.js";
 
-import {
-  SolanaMobileWalletAdapter,
-  createDefaultAuthorizationResultCache,
-} from "@solana-mobile/wallet-adapter-mobile";
+import * as Mobile from "@solana-mobile/wallet-adapter-mobile";
 
-type AppIdentity = {
-  name: string;
-  uri?: string;
-  icon?: string;
-};
-
-export default function Providers({ children }: { children: React.ReactNode }) {
+export default function Providers({ children }: { children: ReactNode }) {
   const endpoint = useMemo(() => clusterApiUrl("mainnet-beta"), []);
-  const [origin, setOrigin] = useState("https://seeker-streaks.vercel.app");
 
-  useEffect(() => {
-    if (typeof window !== "undefined") setOrigin(window.location.origin);
+  const wallets = useMemo(() => {
+    // These exist in the package, but TS versions/types sometimes mismatch.
+    // We pull them safely.
+    const createDefaultAuthorizationResultCache =
+      (Mobile as any).createDefaultAuthorizationResultCache;
+    const createDefaultAddressSelector =
+      (Mobile as any).createDefaultAddressSelector;
+
+    const authorizationResultCache = createDefaultAuthorizationResultCache
+      ? createDefaultAuthorizationResultCache()
+      : undefined;
+
+    const addressSelector = createDefaultAddressSelector
+      ? createDefaultAddressSelector()
+      : undefined;
+
+    // IMPORTANT: Some versions export a class, others export different shapes.
+    // This resolves the constructor reliably.
+    const MWAConstructor =
+      (Mobile as any).SolanaMobileWalletAdapter ||
+      (Mobile as any).default ||
+      null;
+
+    if (!MWAConstructor) {
+      console.error(
+        "Solana Mobile Wallet Adapter constructor not found. Check @solana-mobile/wallet-adapter-mobile version/exports."
+      );
+      return [];
+    }
+
+    const origin =
+      typeof window !== "undefined"
+        ? window.location.origin
+        : "https://seeker-streaks.vercel.app";
+
+    return [
+      new MWAConstructor({
+        addressSelector,
+        authorizationResultCache,
+        appIdentity: {
+          name: "Seeker Streaks",
+          // Keep as strings for widest compatibility (some typings reject URL objects)
+          uri: origin,
+          icon: `${origin}/icon-192.png`,
+        },
+      }),
+    ];
   }, []);
-
-  const mwaAdapter = useMemo(() => {
-    const authorizationResultCache = createDefaultAuthorizationResultCache();
-
-    const appIdentity: AppIdentity = {
-      name: "Seeker Streaks",
-      uri: origin,
-      icon: `${origin}/icon-192.png`,
-    };
-
-    return new SolanaMobileWalletAdapter({
-      appIdentity,
-      authorizationResultCache,
-    } as any);
-  }, [origin]);
-
-  // ✅ IMPORTANT: wallet-adapter-react requires a selected wallet.
-  // If we only have MWA, set it as default selection.
-  useEffect(() => {
-    try {
-      if (typeof window === "undefined") return;
-      const key = "walletName";
-      const existing = window.localStorage.getItem(key);
-      if (!existing) {
-        window.localStorage.setItem(key, mwaAdapter.name);
-      }
-    } catch {}
-  }, [mwaAdapter]);
-
-  const wallets = useMemo(() => [mwaAdapter], [mwaAdapter]);
 
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <WalletProvider wallets={wallets} autoConnect>
+      <WalletProvider wallets={wallets as any} autoConnect={false}>
         {children}
       </WalletProvider>
     </ConnectionProvider>
