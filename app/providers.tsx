@@ -2,12 +2,9 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
-import {
-  WalletModalProvider,
-} from "@solana/wallet-adapter-react-ui";
 import "@solana/wallet-adapter-react-ui/styles.css";
 
-// ✅ Solana Mobile adapter ONLY (Seeker / Seed Vault / MWA)
+// ✅ Solana Mobile adapter ONLY (Seeker / Seed Vault)
 import * as solanaMobile from "@solana-mobile/wallet-adapter-mobile";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
@@ -19,6 +16,10 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   }, []);
 
   const wallets = useMemo(() => {
+    // ✅ IMPORTANT: don’t construct the adapter until we know the origin,
+    // otherwise it can be re-created and selection can get lost.
+    if (!origin) return [];
+
     const MobileAdapterCtor =
       (solanaMobile as any).SolanaMobileWalletAdapter ||
       (solanaMobile as any).default;
@@ -51,9 +52,8 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         authorizationResultCache,
         appIdentity: {
           name: "Seeker Streaks",
-          uri: origin || undefined,
-          // MUST be a real image that exists publicly:
-          icon: origin ? `${origin}/icon-192.png` : undefined,
+          uri: origin,
+          icon: `${origin}/icon-192.png`,
         },
       }),
     ];
@@ -61,9 +61,8 @@ export default function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <WalletProvider wallets={wallets} autoConnect={false}>
-        {/* ✅ REQUIRED for WalletMultiButton */}
-        <WalletModalProvider>{children}</WalletModalProvider>
+      <WalletProvider wallets={wallets} autoConnect>
+        {children}
       </WalletProvider>
     </ConnectionProvider>
   );

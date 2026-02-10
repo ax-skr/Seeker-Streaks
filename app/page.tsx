@@ -59,15 +59,9 @@ function shortWallet(w?: string | null) {
   return `${w.slice(0, 4)}…${w.slice(-4)}`;
 }
 
-function safeErr(e: any) {
-  try {
-    if (!e) return "Unknown error";
-    if (typeof e === "string") return e;
-    if (e?.message) return String(e.message);
-    return JSON.stringify(e);
-  } catch {
-    return "Unknown error";
-  }
+function isSolanaMobileUA() {
+  if (typeof navigator === "undefined") return false;
+  return /SolanaMobile|SeedVault|Seeker/i.test(navigator.userAgent);
 }
 
 // ---------- types ----------
@@ -93,6 +87,9 @@ export default function Home() {
     signMessage,
     wallet,
     wallets,
+    select,
+    connect,
+    disconnect,
   } = useWallet();
 
   const { connection } = useConnection(); // kept if you use it elsewhere
@@ -123,66 +120,60 @@ export default function Home() {
 
   const walletStr = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
 
-  // --- Debug helpers ---
-  const uaSolanaMobile =
-    typeof navigator !== "undefined"
-      ? /SolanaMobile|SeedVault|Seeker/i.test(navigator.userAgent)
-      : false;
+  // ✅ FIX #1: auto-select the only wallet (MWA) if nothing is selected yet
+  useEffect(() => {
+    if (!mounted) return;
+    if (wallet) return; // already selected
+    if (!wallets || wallets.length === 0) return;
 
-  const activeAdapter: any = wallet?.adapter;
-  const activeName = activeAdapter?.name ?? "None";
-  const readyState = activeAdapter?.readyState ?? "Unknown";
-
-  // ✅ FIX: fire connect() immediately in the click gesture
-  // (no awaited work before starting connect)
-  const handleConnect = useCallback(() => {
-    const onlyAdapter: any = wallets?.[0]?.adapter;
-
-    setMsg("");
-
-    if (!onlyAdapter) {
-      setMsg("No wallet adapter instance found.");
-      return;
+    // You have only ONE wallet: Mobile Wallet Adapter
+    // Select it automatically so connect() works.
+    const first = wallets[0];
+    if (first?.adapter?.name) {
+      select(first.adapter.name);
     }
+  }, [mounted, wallet, wallets, select]);
 
-    if (connected) {
-      Promise.resolve()
-        .then(() => onlyAdapter.disconnect?.())
-        .catch((e: any) => setMsg(`Disconnect failed: ${safeErr(e)}`));
-      return;
-    }
+  // ✅ FIX #2: connect/disconnect using wallet-adapter-react context
+  const handleConnect = useCallback(async () => {
+    try {
+      setMsg("");
 
-    if (typeof onlyAdapter.connect !== "function") {
-      setMsg("Wallet cannot connect (connect missing).");
-      return;
-    }
-
-    setMsg("Clicked. Launching wallet…");
-
-    let settled = false;
-
-    // Start connect NOW (no await before starting)
-    const p = onlyAdapter.connect();
-
-    Promise.resolve(p)
-      .then(() => {
-        settled = true;
-        setMsg("");
-      })
-      .catch((e: any) => {
-        settled = true;
-        setMsg(`Connect failed: ${safeErr(e)}`);
-      });
-
-    // Watchdog if intent never opens / connect hangs
-    setTimeout(() => {
-      if (!settled) {
-        setMsg(
-          "connect() is still pending. This usually means the wallet won’t launch or the origin isn’t trusted (assetlinks.json missing for your TWA)."
-        );
+      // If the wallet list hasn't loaded yet
+      if (!wallets || wallets.length === 0) {
+        setMsg("Wallets not loaded yet (wait 1–2 seconds then try again).");
+        return;
       }
-    }, 2500);
-  }, [wallets, connected]);
+
+      // If nothing selected yet (should be auto-selected, but just in case)
+      if (!wallet?.adapter?.name) {
+        const first = wallets[0];
+        if (first?.adapter?.name) {
+          select(first.adapter.name);
+          // give React a tick to apply selection
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      }
+
+      if (connected) {
+        await disconnect();
+        return;
+      }
+
+      await connect();
+    } catch (e: any) {
+      console.error(e);
+      const m = e?.message ? String(e.message) : String(e);
+
+      // Extra hint for the common cause:
+      // opening in normal Chrome without a compatible MWA wallet/SeedVault context
+      const hint = isSolanaMobileUA()
+        ? ""
+        : " (If you’re not inside Seeker/SeedVault, MWA may not have a wallet to route to.)";
+
+      setMsg(`Connect failed: ${m}${hint}`);
+    }
+  }, [wallets, wallet, select, connected, connect, disconnect]);
 
   // ---------- rescue quote ----------
   const loadRescueQuote = useCallback(async () => {
@@ -496,6 +487,12 @@ export default function Home() {
     rescueQuote.canRescue &&
     rescueQuote.missedDays > 0;
 
+  // ---------- debug ----------
+  const uaIsSolanaMobile = isSolanaMobileUA();
+  const selectedWalletName = wallet?.adapter?.name ?? "None";
+  const activeAdapterName = wallet?.adapter?.name ?? "None";
+  const readyState = (wallet?.adapter as any)?.readyState ?? "Unknown";
+
   return (
     <main
       style={{
@@ -513,30 +510,29 @@ export default function Home() {
           Daily streaks for Solana Seeker users
         </p>
 
-        {/* Debug banner */}
+        {/* DEBUG BANNER */}
         <div
           style={{
-            background: "rgba(2,6,23,0.8)",
+            background: "rgba(2,6,23,0.9)",
             border: "1px solid rgba(255,255,255,0.10)",
             borderRadius: 14,
-            padding: 12,
+            padding: 14,
             marginBottom: 12,
             fontSize: 12,
-            lineHeight: 1.45,
-            whiteSpace: "pre-wrap",
+            lineHeight: 1.35,
           }}
         >
           <div style={{ fontWeight: 900, marginBottom: 6 }}>Debug (MWA)</div>
-          <div>UA SolanaMobile/SeedVault: {String(uaSolanaMobile)}</div>
+          <div>UA SolanaMobile/SeedVault: {String(uaIsSolanaMobile)}</div>
           <div>wallets (adapter-react): {wallets?.length ?? 0}</div>
-          <div>selected wallet: {wallet?.adapter?.name ?? "None"}</div>
+          <div>selected wallet: {selectedWalletName}</div>
           <div>
-            active adapter: {activeName} • readyState: {String(readyState)}
+            active adapter: {activeAdapterName} • readyState: {String(readyState)}
           </div>
           <div>
             connected: {String(connected)} • connecting: {String(connecting)} •
             disconnecting: {String(disconnecting)} • pubkey:{" "}
-            {walletStr ? shortWallet(walletStr) : "none"}
+            {publicKey ? "yes" : "none"}
           </div>
         </div>
 
@@ -573,8 +569,7 @@ export default function Home() {
 
           {connected && (
             <div style={{ marginTop: 12, fontSize: 14, opacity: 0.85 }}>
-              Connected:{" "}
-              <span style={{ fontWeight: 800 }}>{connectedLabel}</span>
+              Connected: <span style={{ fontWeight: 800 }}>{connectedLabel}</span>
               {skrName && skrName.toLowerCase().endsWith(".skr") && (
                 <span
                   style={{
@@ -617,6 +612,97 @@ export default function Home() {
           )}
         </div>
 
+        {status && (
+          <div
+            style={{
+              background: "#020617",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 14,
+              padding: 16,
+              marginBottom: 16,
+            }}
+          >
+            <div>
+              🔥 Streak: <strong>{status.streak}</strong>
+            </div>
+            <div>⏳ Missed days: {status.missedDays}</div>
+            <div>🛡️ Rescues left: {status.remainingRescue}</div>
+          </div>
+        )}
+
+        {showRescueCard && (
+          <div
+            style={{
+              background: "#020617",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: 14,
+              padding: 16,
+              marginBottom: 16,
+            }}
+          >
+            <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>
+              🛟 Rescue your streak
+            </div>
+
+            <div style={{ opacity: 0.85, marginBottom: 12 }}>
+              You missed <strong>{rescueQuote!.missedDays}</strong> day(s). Pay{" "}
+              <strong>{rescueQuote!.costSKR} SKR</strong> to keep your streak.
+            </div>
+
+            <button
+              onClick={payRescue}
+              disabled={paying || resetting}
+              style={{
+                width: "100%",
+                padding: "14px",
+                borderRadius: 12,
+                background: "linear-gradient(90deg,#22d3ee,#7c3aed)",
+                border: "none",
+                color: "#020617",
+                fontWeight: 900,
+                cursor: paying || resetting ? "not-allowed" : "pointer",
+              }}
+            >
+              {paying ? "Paying…" : `Pay ${rescueQuote!.costSKR} SKR`}
+            </button>
+
+            <button
+              onClick={resetStreak}
+              disabled={resetting || paying}
+              style={{
+                width: "100%",
+                padding: "12px",
+                borderRadius: 12,
+                marginTop: 10,
+                background: "transparent",
+                border: "1px solid rgba(255,255,255,0.18)",
+                color: "#e5e7eb",
+                fontWeight: 900,
+                cursor: resetting || paying ? "not-allowed" : "pointer",
+              }}
+            >
+              {resetting ? "Resetting…" : "Reset streak (free)"}
+            </button>
+
+            <div
+              style={{
+                marginTop: 10,
+                opacity: 0.75,
+                fontSize: 12,
+                lineHeight: 1.4,
+              }}
+            >
+              Resets your streak to <strong>1</strong> but{" "}
+              <strong>refreshes rescues</strong>. You still keep your points.
+            </div>
+
+            <div style={{ marginTop: 10, opacity: 0.7, fontSize: 12 }}>
+              Creates token accounts if needed, transfers SKR, then verifies
+              on-chain.
+            </div>
+          </div>
+        )}
+
         <button
           onClick={checkIn}
           disabled={!sessionVerified || showRescueCard}
@@ -631,8 +717,7 @@ export default function Home() {
             border: "none",
             color: !sessionVerified || showRescueCard ? "#6b7280" : "#020617",
             fontWeight: 800,
-            cursor:
-              !sessionVerified || showRescueCard ? "not-allowed" : "pointer",
+            cursor: !sessionVerified || showRescueCard ? "not-allowed" : "pointer",
             marginBottom: 12,
           }}
         >
@@ -640,7 +725,7 @@ export default function Home() {
         </button>
 
         {msg && (
-          <div style={{ textAlign: "center", opacity: 0.95, marginBottom: 10 }}>
+          <div style={{ textAlign: "center", opacity: 0.9, marginBottom: 10 }}>
             {msg}
           </div>
         )}
