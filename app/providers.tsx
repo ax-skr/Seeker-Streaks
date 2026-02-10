@@ -2,68 +2,51 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
-import "@solana/wallet-adapter-react-ui/styles.css";
+import { clusterApiUrl } from "@solana/web3.js";
 
-// Solana Mobile adapter ONLY (Seeker / Seed Vault)
-import * as solanaMobile from "@solana-mobile/wallet-adapter-mobile";
+import {
+  SolanaMobileWalletAdapter,
+  createDefaultAuthorizationResultCache,
+} from "@solana-mobile/wallet-adapter-mobile";
+
+// Small helper type so TS stops screaming across package versions
+type AppIdentity = {
+  name: string;
+  uri?: string;
+  icon?: string;
+};
 
 export default function Providers({ children }: { children: React.ReactNode }) {
-  const endpoint = "https://api.mainnet-beta.solana.com";
-  const [origin, setOrigin] = useState<string>("");
+  const endpoint = useMemo(() => clusterApiUrl("mainnet-beta"), []);
+  const [origin, setOrigin] = useState<string>("https://seeker-streaks.vercel.app");
 
   useEffect(() => {
-    if (typeof window !== "undefined") setOrigin(window.location.origin);
+    if (typeof window !== "undefined") {
+      setOrigin(window.location.origin);
+    }
   }, []);
 
   const wallets = useMemo(() => {
-    const MobileAdapterCtor =
-      (solanaMobile as any).SolanaMobileWalletAdapter ||
-      (solanaMobile as any).default;
+    const authorizationResultCache = createDefaultAuthorizationResultCache();
 
-    const createDefaultAddressSelector =
-      (solanaMobile as any).createDefaultAddressSelector;
-    const createDefaultAuthorizationResultCache =
-      (solanaMobile as any).createDefaultAuthorizationResultCache;
+    const appIdentity: AppIdentity = {
+      name: "Seeker Streaks",
+      uri: origin,
+      icon: `${origin}/icon-192.png`,
+    };
 
-    if (!MobileAdapterCtor) {
-      console.error(
-        "[Providers] SolanaMobileWalletAdapter not found in @solana-mobile/wallet-adapter-mobile"
-      );
-      return [];
-    }
-
-    const addressSelector =
-      typeof createDefaultAddressSelector === "function"
-        ? createDefaultAddressSelector()
-        : { select: async (addresses: string[]) => addresses?.[0] };
-
-    const authorizationResultCache =
-      typeof createDefaultAuthorizationResultCache === "function"
-        ? createDefaultAuthorizationResultCache()
-        : { clear: async () => {}, get: async () => null, set: async () => {} };
-
-    // IMPORTANT:
-    // - Only create the adapter after we know origin (so appIdentity.uri/icon are correct)
-    // - MWA hates being auto-connected during hydration, so we will NOT autoConnect
-    if (!origin) return [];
-
+    // Cast options to avoid version-to-version TS mismatch
     return [
-      new MobileAdapterCtor({
-        addressSelector,
+      new SolanaMobileWalletAdapter({
+        appIdentity,
         authorizationResultCache,
-        appIdentity: {
-          name: "Seeker Streaks",
-          uri: origin,
-          icon: `${origin}/icon-192.png`,
-        },
-      }),
+      } as any),
     ];
   }, [origin]);
 
   return (
     <ConnectionProvider endpoint={endpoint}>
-      {/* ✅ DO NOT autoConnect for MWA/SeedVault */}
-      <WalletProvider wallets={wallets} autoConnect={false}>
+      <WalletProvider wallets={wallets} autoConnect>
         {children}
       </WalletProvider>
     </ConnectionProvider>
