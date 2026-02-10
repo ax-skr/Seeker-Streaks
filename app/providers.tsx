@@ -1,28 +1,21 @@
 "use client";
 
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
 import "@solana/wallet-adapter-react-ui/styles.css";
 
-// ✅ Solana Mobile adapter ONLY (Seeker / Seed Vault)
+// Solana Mobile adapter ONLY (Seeker / Seed Vault)
 import * as solanaMobile from "@solana-mobile/wallet-adapter-mobile";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const endpoint = "https://api.mainnet-beta.solana.com";
-
   const [origin, setOrigin] = useState<string>("");
-  const [originReady, setOriginReady] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      setOrigin(window.location.origin);
-      setOriginReady(true);
-    }
+    if (typeof window !== "undefined") setOrigin(window.location.origin);
   }, []);
 
   const wallets = useMemo(() => {
-    if (!originReady) return [];
-
     const MobileAdapterCtor =
       (solanaMobile as any).SolanaMobileWalletAdapter ||
       (solanaMobile as any).default;
@@ -44,40 +37,33 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         ? createDefaultAddressSelector()
         : { select: async (addresses: string[]) => addresses?.[0] };
 
-    // IMPORTANT: keep the cache stable + recoverable
     const authorizationResultCache =
       typeof createDefaultAuthorizationResultCache === "function"
         ? createDefaultAuthorizationResultCache()
         : { clear: async () => {}, get: async () => null, set: async () => {} };
 
-    try {
-      return [
-        new MobileAdapterCtor({
-          addressSelector,
-          authorizationResultCache,
-          // ✅ This matters: explicitly set cluster
-          cluster: "mainnet-beta",
-          appIdentity: {
-            name: "Seeker Streaks",
-            uri: origin || undefined,
-            icon: origin ? `${origin}/icon-192.png` : undefined,
-          },
-        }),
-      ];
-    } catch (e) {
-      console.error("[Providers] Failed to construct MWA adapter:", e);
-      return [];
-    }
-  }, [origin, originReady]);
+    // IMPORTANT:
+    // - Only create the adapter after we know origin (so appIdentity.uri/icon are correct)
+    // - MWA hates being auto-connected during hydration, so we will NOT autoConnect
+    if (!origin) return [];
 
-  const onError = useCallback((e: any) => {
-    console.error("[WalletProvider onError]", e);
-  }, []);
+    return [
+      new MobileAdapterCtor({
+        addressSelector,
+        authorizationResultCache,
+        appIdentity: {
+          name: "Seeker Streaks",
+          uri: origin,
+          icon: `${origin}/icon-192.png`,
+        },
+      }),
+    ];
+  }, [origin]);
 
   return (
     <ConnectionProvider endpoint={endpoint}>
-      {/* ✅ FIX: turn OFF autoConnect for MWA stability */}
-      <WalletProvider wallets={wallets} autoConnect={false} onError={onError}>
+      {/* ✅ DO NOT autoConnect for MWA/SeedVault */}
+      <WalletProvider wallets={wallets} autoConnect={false}>
         {children}
       </WalletProvider>
     </ConnectionProvider>
