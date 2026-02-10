@@ -48,6 +48,7 @@ async function getWorkingConnectionForBlockhash(): Promise<BlockhashResult> {
   );
 }
 
+// ---------- helpers ----------
 function toBase64(bytes: Uint8Array): string {
   let binary = "";
   bytes.forEach((b) => (binary += String.fromCharCode(b)));
@@ -65,6 +66,7 @@ function uaHasSolanaMobileHints(): boolean {
   return /SolanaMobile|SeedVault|Seeker/i.test(ua);
 }
 
+// ---------- types ----------
 type RescueQuote = {
   ok: boolean;
   verified: boolean;
@@ -105,9 +107,11 @@ export default function Home() {
   const [paying, setPaying] = useState(false);
   const [resetting, setResetting] = useState(false);
 
+  // debug + UX safety
   const [uaMobile, setUaMobile] = useState(false);
   const [connectErr, setConnectErr] = useState<string>("");
   const [uiBusy, setUiBusy] = useState(false);
+  const connectAttemptId = useRef(0);
 
   useEffect(() => setMounted(true), []);
   useEffect(() => setUaMobile(uaHasSolanaMobileHints()), []);
@@ -125,18 +129,74 @@ export default function Home() {
 
   const walletStr = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
 
-  // ✅ Auto-select the only wallet (MWA) so connect() won't throw WalletNotSelectedError
+  // There should be ONLY ONE wallet now (MWA), but we still handle safely.
+  const preferredWalletName = useMemo(() => {
+    const first = wallets?.[0]?.adapter?.name ?? null;
+    return first;
+  }, [wallets]);
+
+  const activeAdapterName = useMemo(
+    () => String(wallet?.adapter?.name ?? "None"),
+    [wallet]
+  );
+
+  const activeReadyState = useMemo(
+    () => String(wallet?.adapter?.readyState ?? "Unknown"),
+    [wallet]
+  );
+
+  // Auto-select the only wallet once, so connect() never throws WalletNotSelectedError.
   useEffect(() => {
+    if (!mounted) return;
     if (wallet) return;
-    if (!wallets || wallets.length !== 1) return;
-    const only = wallets[0]?.adapter?.name;
-    if (!only) return;
+    if (!preferredWalletName) return;
+
     try {
-      select(only);
-    } catch {}
-  }, [wallet, wallets, select]);
+      select(preferredWalletName);
+    } catch {
+      // ignore
+    }
+  }, [mounted, wallet, preferredWalletName, select]);
+
+  const hardResetWalletSession = useCallback(async () => {
+    try {
+      setMsg("");
+      setConnectErr("");
+      setUiBusy(true);
+
+      // 1) Disconnect if possible
+      try {
+        if (connected) await disconnect();
+      } catch {}
+
+      // 2) Clear wallet-adapter localStorage keys (best-effort)
+      try {
+        if (typeof window !== "undefined") {
+          const keys = Object.keys(window.localStorage);
+          for (const k of keys) {
+            // common wallet-adapter keys + some MWA cache keys
+            if (
+              k === "walletName" ||
+              k.startsWith("walletAdapter") ||
+              k.toLowerCase().includes("wallet") ||
+              k.toLowerCase().includes("mwa") ||
+              k.toLowerCase().includes("solanamobile")
+            ) {
+              window.localStorage.removeItem(k);
+            }
+          }
+        }
+      } catch {}
+
+      setMsg("Wallet session reset. Now try Connect wallet again.");
+    } finally {
+      setUiBusy(false);
+    }
+  }, [connected, disconnect]);
 
   const handleConnect = useCallback(async () => {
+    const attempt = ++connectAttemptId.current;
+
     try {
       setMsg("");
       setConnectErr("");
@@ -147,25 +207,31 @@ export default function Home() {
         return;
       }
 
-      // ✅ If not selected but we have exactly 1 wallet, select it first
-      if (!wallet && wallets?.length === 1) {
-        const only = wallets[0]?.adapter?.name;
-        if (only) {
-          try {
-            select(only);
-            await new Promise((r) => setTimeout(r, 50));
-          } catch {}
-        }
+      if (!preferredWalletName) {
+        setConnectErr("No wallet adapters found (MWA missing).");
+        return;
       }
 
+      // Ensure selected
+      if (!wallet || wallet.adapter?.name !== preferredWalletName) {
+        select(preferredWalletName);
+        await new Promise((r) => setTimeout(r, 50));
+      }
+
+      // Connect
       await connect();
 
-      await new Promise((r) => setTimeout(r, 600));
+      // Wait a moment for publicKey to populate
+      await new Promise((r) => setTimeout(r, 700));
+
+      if (connectAttemptId.current !== attempt) return;
 
       if (!publicKey) {
         setConnectErr(
           "Connected session returned but no public key. This usually means Seed Vault authorization did not complete. Try 'Reset wallet session' and then connect again (best inside the installed Seeker TWA)."
         );
+
+        // cleanup so it doesn't get stuck
         try {
           await disconnect();
         } catch {}
@@ -180,36 +246,17 @@ export default function Home() {
     } finally {
       setUiBusy(false);
     }
-  }, [connected, disconnect, wallet, wallets, select, connect, publicKey]);
+  }, [
+    connected,
+    disconnect,
+    wallet,
+    select,
+    connect,
+    preferredWalletName,
+    publicKey,
+  ]);
 
-  const hardResetWalletSession = useCallback(async () => {
-    try {
-      setMsg("");
-      setConnectErr("");
-      setUiBusy(true);
-
-      try {
-        if (connected) await disconnect();
-      } catch {}
-
-      try {
-        if (typeof window !== "undefined") {
-          const keys = Object.keys(window.localStorage);
-          for (const k of keys) {
-            if (k.startsWith("walletAdapter") || k.includes("walletName")) {
-              window.localStorage.removeItem(k);
-            }
-          }
-          window.localStorage.removeItem("walletName");
-        }
-      } catch {}
-
-      setMsg("Wallet session reset. Now try Connect wallet again.");
-    } finally {
-      setUiBusy(false);
-    }
-  }, [connected, disconnect]);
-
+  // ---------- rescue quote ----------
   const loadRescueQuote = useCallback(async () => {
     if (!walletStr) return;
 
@@ -231,6 +278,7 @@ export default function Home() {
     setRescueQuote(q);
   }, [walletStr]);
 
+  // ---------- resolve .skr name ----------
   const resolveSkr = useCallback(async () => {
     if (!walletStr) return;
     if (lastResolvedWallet.current === walletStr) return;
@@ -273,6 +321,7 @@ export default function Home() {
     resolveSkr();
   }, [connected, walletStr, resolveSkr]);
 
+  // ---------- load status ----------
   const loadStatus = useCallback(async () => {
     if (!walletStr) return;
 
@@ -292,6 +341,7 @@ export default function Home() {
     }
   }, [walletStr, loadRescueQuote]);
 
+  // ---------- verify ----------
   const verifyWallet = useCallback(async () => {
     if (!connected || !walletStr || !signMessage) {
       setMsg("Connect a wallet first.");
@@ -336,6 +386,7 @@ export default function Home() {
     }
   }, [connected, walletStr, signMessage, loadStatus, loadRescueQuote]);
 
+  // ---------- check in ----------
   const checkIn = useCallback(async () => {
     if (!walletStr) return;
 
@@ -368,6 +419,7 @@ export default function Home() {
     await loadStatus();
   }, [walletStr, loadStatus, loadRescueQuote]);
 
+  // ---------- reset streak (free) ----------
   const resetStreak = useCallback(async () => {
     if (!walletStr) return;
 
@@ -402,6 +454,7 @@ export default function Home() {
     }
   }, [walletStr, loadStatus, loadRescueQuote]);
 
+  // ---------- pay rescue (VersionedTransaction v0 for Seeker) ----------
   const payRescue = useCallback(async () => {
     if (!publicKey || !walletStr) {
       setMsg("Wallet not ready.");
@@ -450,8 +503,10 @@ export default function Home() {
         ),
       ];
 
-      const { conn: rpcConn, blockhash, lastValidBlockHeight } =
+      const { conn: rpcConn, blockhash, lastValidBlockHeight, rpc } =
         await getWorkingConnectionForBlockhash();
+
+      console.info(`[payRescue] using rpc=${rpc} (v0 tx)`);
 
       const msgV0 = new TransactionMessage({
         payerKey: publicKey,
@@ -486,7 +541,10 @@ export default function Home() {
       });
 
       const commitJson = await commitRes.json().catch(() => ({}));
-      if (!commitRes.ok) throw new Error(commitJson.error || "Commit failed");
+
+      if (!commitRes.ok) {
+        throw new Error(commitJson.error || "Commit failed");
+      }
 
       setMsg(`Rescued ${commitJson.rescuedDays} day(s) ✓`);
       await loadStatus();
@@ -526,6 +584,7 @@ export default function Home() {
           Daily streaks for Solana Seeker users
         </p>
 
+        {/* Debug banner */}
         <div
           style={{
             background: "rgba(2,6,23,0.7)",
@@ -541,14 +600,17 @@ export default function Home() {
           <div style={{ fontWeight: 900, marginBottom: 6 }}>Debug</div>
           <div>UA hints SolanaMobile/SeedVault/Seeker: {String(uaMobile)}</div>
           <div>wallets (adapter-react): {wallets?.length ?? 0}</div>
-          <div>selected wallet: {wallet?.adapter?.name ?? "None"}</div>
-          <div>readyState: {String(wallet?.adapter?.readyState ?? "Unknown")}</div>
+          <div>selected wallet: {activeAdapterName}</div>
+          <div>readyState: {activeReadyState}</div>
           <div>
             connected: {String(connected)} • connecting: {String(connecting)} •
-            disconnecting: {String(disconnecting)} • pubkey: {walletStr ?? "none"}
+            disconnecting: {String(disconnecting)} • pubkey:{" "}
+            {walletStr ?? "none"}
           </div>
           <div>uiBusy: {String(uiBusy)}</div>
-          {connectErr ? <div style={{ marginTop: 6 }}>last error: {connectErr}</div> : null}
+          {connectErr ? (
+            <div style={{ marginTop: 6 }}>last error: {connectErr}</div>
+          ) : null}
         </div>
 
         <div
@@ -575,7 +637,11 @@ export default function Home() {
               opacity: uiBusy ? 0.7 : 1,
             }}
           >
-            {connected ? "Disconnect wallet" : uiBusy ? "Connecting…" : "Connect wallet"}
+            {connected
+              ? "Disconnect wallet"
+              : uiBusy
+              ? "Connecting…"
+              : "Connect wallet"}
           </button>
 
           <button
@@ -599,7 +665,8 @@ export default function Home() {
 
           {connected && (
             <div style={{ marginTop: 12, fontSize: 14, opacity: 0.85 }}>
-              Connected: <span style={{ fontWeight: 800 }}>{connectedLabel}</span>
+              Connected:{" "}
+              <span style={{ fontWeight: 800 }}>{connectedLabel}</span>
             </div>
           )}
 
@@ -630,6 +697,86 @@ export default function Home() {
             </div>
           )}
         </div>
+
+        {status && (
+          <div
+            style={{
+              background: "#020617",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 14,
+              padding: 16,
+              marginBottom: 16,
+            }}
+          >
+            <div>
+              🔥 Streak: <strong>{status.streak}</strong>
+            </div>
+            <div>⏳ Missed days: {status.missedDays}</div>
+            <div>🛡️ Rescues left: {status.remainingRescue}</div>
+          </div>
+        )}
+
+        {showRescueCard && (
+          <div
+            style={{
+              background: "#020617",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: 14,
+              padding: 16,
+              marginBottom: 16,
+            }}
+          >
+            <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>
+              🛟 Rescue your streak
+            </div>
+
+            <div style={{ opacity: 0.85, marginBottom: 12 }}>
+              You missed <strong>{rescueQuote!.missedDays}</strong> day(s). Pay{" "}
+              <strong>{rescueQuote!.costSKR} SKR</strong> to keep your streak.
+            </div>
+
+            <button
+              onClick={payRescue}
+              disabled={paying || resetting}
+              style={{
+                width: "100%",
+                padding: "14px",
+                borderRadius: 12,
+                background: "linear-gradient(90deg,#22d3ee,#7c3aed)",
+                border: "none",
+                color: "#020617",
+                fontWeight: 900,
+                cursor: paying || resetting ? "not-allowed" : "pointer",
+                opacity: paying || resetting ? 0.7 : 1,
+              }}
+            >
+              {paying ? "Paying…" : `Pay ${rescueQuote!.costSKR} SKR`}
+            </button>
+
+            <button
+              onClick={resetStreak}
+              disabled={resetting || paying}
+              style={{
+                width: "100%",
+                padding: "12px",
+                borderRadius: 12,
+                marginTop: 10,
+                background: "transparent",
+                border: "1px solid rgba(255,255,255,0.18)",
+                color: "#e5e7eb",
+                fontWeight: 900,
+                cursor: resetting || paying ? "not-allowed" : "pointer",
+                opacity: resetting || paying ? 0.7 : 1,
+              }}
+            >
+              {resetting ? "Resetting…" : "Reset streak (free)"}
+            </button>
+
+            <div style={{ marginTop: 10, opacity: 0.75, fontSize: 12 }}>
+              Resets streak to <strong>1</strong> but refreshes rescues.
+            </div>
+          </div>
+        )}
 
         <button
           onClick={checkIn}
