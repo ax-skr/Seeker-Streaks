@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useWallet } from "@solana/wallet-adapter-react";
+import { WalletReadyState } from "@solana/wallet-adapter-base";
 
 import {
   Connection,
@@ -116,6 +117,9 @@ export default function Home() {
   useEffect(() => setMounted(true), []);
   useEffect(() => setUaMobile(uaHasSolanaMobileHints()), []);
 
+  const walletStr = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
+
+  // Reset UI when wallet changes
   useEffect(() => {
     setSessionVerified(false);
     setStatus(null);
@@ -125,38 +129,41 @@ export default function Home() {
     setMsg("");
     setConnectErr("");
     setUiBusy(false);
-  }, [publicKey]);
+  }, [walletStr]);
 
-  const walletStr = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
-
-  // There should be ONLY ONE wallet now (MWA), but we still handle safely.
-  const preferredWalletName = useMemo(() => {
-    const first = wallets?.[0]?.adapter?.name ?? null;
-    return first;
-  }, [wallets]);
-
-  const activeAdapterName = useMemo(
-    () => String(wallet?.adapter?.name ?? "None"),
-    [wallet]
-  );
-
-  const activeReadyState = useMemo(
-    () => String(wallet?.adapter?.readyState ?? "Unknown"),
-    [wallet]
-  );
-
-  // Auto-select the only wallet once, so connect() never throws WalletNotSelectedError.
+  /**
+   * Since you ONLY want Mobile Wallet Adapter now:
+   * - If there is exactly 1 wallet adapter, always select it automatically.
+   * This prevents WalletNotSelectedError.
+   */
   useEffect(() => {
     if (!mounted) return;
     if (wallet) return;
-    if (!preferredWalletName) return;
+    if (!wallets || wallets.length === 0) return;
 
-    try {
-      select(preferredWalletName);
-    } catch {
-      // ignore
+    // pick the only adapter OR the first loadable/installed one
+    const best =
+      wallets.find((w) =>
+        [WalletReadyState.Installed, WalletReadyState.Loadable].includes(
+          w.adapter?.readyState
+        )
+      ) ?? wallets[0];
+
+    if (best?.adapter?.name) {
+      try {
+        select(best.adapter.name);
+      } catch {}
     }
-  }, [mounted, wallet, preferredWalletName, select]);
+  }, [mounted, wallet, wallets, select]);
+
+  const selectedName = useMemo(
+    () => String(wallet?.adapter?.name ?? "None"),
+    [wallet]
+  );
+  const selectedReadyState = useMemo(
+    () => String(wallet?.adapter?.readyState ?? "Unknown"),
+    [wallet]
+  );
 
   const hardResetWalletSession = useCallback(async () => {
     try {
@@ -164,23 +171,20 @@ export default function Home() {
       setConnectErr("");
       setUiBusy(true);
 
-      // 1) Disconnect if possible
+      // Disconnect if possible
       try {
         if (connected) await disconnect();
       } catch {}
 
-      // 2) Clear wallet-adapter localStorage keys (best-effort)
+      // Clear wallet-adapter storage keys (fixes half-sessions)
       try {
         if (typeof window !== "undefined") {
           const keys = Object.keys(window.localStorage);
           for (const k of keys) {
-            // common wallet-adapter keys + some MWA cache keys
             if (
-              k === "walletName" ||
               k.startsWith("walletAdapter") ||
-              k.toLowerCase().includes("wallet") ||
-              k.toLowerCase().includes("mwa") ||
-              k.toLowerCase().includes("solanamobile")
+              k === "walletName" ||
+              k.includes("walletName")
             ) {
               window.localStorage.removeItem(k);
             }
@@ -194,7 +198,7 @@ export default function Home() {
     }
   }, [connected, disconnect]);
 
-    const handleConnect = useCallback(async () => {
+  const handleConnect = useCallback(async () => {
     const attempt = ++connectAttemptId.current;
 
     try {
@@ -207,29 +211,36 @@ export default function Home() {
         return;
       }
 
-      if (!preferredWalletName) {
-        setMsg("No wallet adapters detected.");
-        return;
+      // Make sure a wallet is selected
+      if (!wallet) {
+        const best =
+          wallets.find((w) =>
+            [WalletReadyState.Installed, WalletReadyState.Loadable].includes(
+              w.adapter?.readyState
+            )
+          ) ?? wallets[0];
+
+        const name = best?.adapter?.name;
+        if (!name) {
+          setConnectErr("No wallet adapters available.");
+          return;
+        }
+
+        select(name);
+        // let React apply selection
+        await new Promise((r) => setTimeout(r, 50));
       }
 
-      // Ensure MWA is selected
-      if (!wallet || wallet.adapter?.name !== preferredWalletName) {
-        select(preferredWalletName);
-        await new Promise((r) => setTimeout(r, 150));
-      }
-
+      // Connect via hook (best compatibility)
       await connect();
 
-      // Give the Android handoff time (Seed Vault can be slow)
-      for (let i = 0; i < 10; i++) {
-        if (connectAttemptId.current !== attempt) return;
-        if (publicKey) break;
-        await new Promise((r) => setTimeout(r, 300));
-      }
+      // Give the Seed Vault flow a moment to return a pubkey
+      await new Promise((r) => setTimeout(r, 650));
+      if (connectAttemptId.current !== attempt) return;
 
       if (!publicKey) {
         setConnectErr(
-          "Connected session returned but no public key. This usually means the Seed Vault/wallet approval screen did not complete on the device. Force close the wallet app + Seeker Streaks app, open the wallet first, then try Connect again."
+          "Connected session returned but no public key. This usually means the Seed Vault approval screen did not complete on the device. Tap 'Reset wallet session' then try Connect again."
         );
         try {
           await disconnect();
@@ -245,15 +256,7 @@ export default function Home() {
     } finally {
       setUiBusy(false);
     }
-  }, [
-    connected,
-    disconnect,
-    wallet,
-    select,
-    connect,
-    preferredWalletName,
-    publicKey,
-  ]);
+  }, [connected, disconnect, wallet, wallets, select, connect, publicKey]);
 
   // ---------- rescue quote ----------
   const loadRescueQuote = useCallback(async () => {
@@ -599,8 +602,8 @@ export default function Home() {
           <div style={{ fontWeight: 900, marginBottom: 6 }}>Debug</div>
           <div>UA hints SolanaMobile/SeedVault/Seeker: {String(uaMobile)}</div>
           <div>wallets (adapter-react): {wallets?.length ?? 0}</div>
-          <div>selected wallet: {activeAdapterName}</div>
-          <div>readyState: {activeReadyState}</div>
+          <div>selected wallet: {selectedName}</div>
+          <div>readyState: {selectedReadyState}</div>
           <div>
             connected: {String(connected)} • connecting: {String(connecting)} •
             disconnecting: {String(disconnecting)} • pubkey:{" "}
@@ -636,11 +639,7 @@ export default function Home() {
               opacity: uiBusy ? 0.7 : 1,
             }}
           >
-            {connected
-              ? "Disconnect wallet"
-              : uiBusy
-              ? "Connecting…"
-              : "Connect wallet"}
+            {connected ? "Disconnect wallet" : uiBusy ? "Connecting…" : "Connect wallet"}
           </button>
 
           <button
@@ -664,8 +663,7 @@ export default function Home() {
 
           {connected && (
             <div style={{ marginTop: 12, fontSize: 14, opacity: 0.85 }}>
-              Connected:{" "}
-              <span style={{ fontWeight: 800 }}>{connectedLabel}</span>
+              Connected: <span style={{ fontWeight: 800 }}>{connectedLabel}</span>
             </div>
           )}
 
@@ -696,6 +694,23 @@ export default function Home() {
             </div>
           )}
         </div>
+
+        {connectErr && (
+          <div
+            style={{
+              marginBottom: 14,
+              padding: 12,
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(2,6,23,0.6)",
+              fontSize: 13,
+              lineHeight: 1.4,
+              opacity: 0.95,
+            }}
+          >
+            {connectErr}
+          </div>
+        )}
 
         {status && (
           <div
