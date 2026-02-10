@@ -62,8 +62,18 @@ function shortWallet(w?: string | null) {
 function isProbablySolanaMobileEnv(): boolean {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent || "";
-  // not perfect, but helps debugging
   return /SolanaMobile|SeedVault/i.test(ua);
+}
+
+function clearMwaCache() {
+  try {
+    const keys = [
+      "SolanaMobileWalletAdapterAuthorizationResultCache",
+      "solana-mobile-wallet-adapter:authorization-result",
+      "walletAdapter",
+    ];
+    keys.forEach((k) => localStorage.removeItem(k));
+  } catch {}
 }
 
 // ---------- types ----------
@@ -129,7 +139,7 @@ export default function Home() {
   // ✅ IMPORTANT: if there's only 1 wallet, force-select it so wallet.adapter is never "None"
   useEffect(() => {
     if (!mounted) return;
-    if (wallet) return; // already selected
+    if (wallet) return;
     if (!wallets || wallets.length === 0) return;
 
     const first = wallets[0];
@@ -142,7 +152,6 @@ export default function Home() {
   }, [mounted, wallet, wallets, select]);
 
   const activeAdapter: any = useMemo(() => {
-    // prefer selected wallet adapter, otherwise fallback to the only wallet
     return wallet?.adapter ?? wallets?.[0]?.adapter ?? null;
   }, [wallet, wallets]);
 
@@ -154,20 +163,21 @@ export default function Home() {
     return String(activeAdapter?.readyState ?? "Unknown");
   }, [activeAdapter]);
 
-  // ✅ FIX: connect directly via adapter (no modal)
+  // ✅ FIX: connect directly via adapter (no modal) + timeout guard + cache reset + forced select
   const handleConnect = useCallback(async () => {
     try {
       setMsg("");
       setConnectErr("");
 
-      // if user somehow has no selected wallet, force select
+      // Ensure a selection exists
       if (!wallet && wallets?.[0]?.adapter?.name) {
         try {
           select(wallets[0].adapter.name);
+          await new Promise((r) => setTimeout(r, 0));
         } catch {}
       }
 
-      const adapter: any = (wallet?.adapter ?? wallets?.[0]?.adapter ?? null);
+      const adapter: any = wallet?.adapter ?? wallets?.[0]?.adapter ?? null;
 
       if (!adapter) {
         setMsg("Wallet adapter not ready (no adapter instance).");
@@ -186,14 +196,53 @@ export default function Home() {
         return;
       }
 
-      await adapter.connect();
+      // Clear any stuck MWA auth session before starting a new connect
+      clearMwaCache();
+
+      // Timeout guard (prevents permanent dark overlay)
+      const timeoutMs = 15000;
+      const connectPromise = adapter.connect();
+
+      await Promise.race([
+        connectPromise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Connect timed out")), timeoutMs)
+        ),
+      ]);
     } catch (e: any) {
       console.error(e);
       const m = e?.message ? String(e.message) : String(e);
       setConnectErr(m);
       setMsg(`Connect failed: ${m}`);
+
+      // Try to cleanly exit a stuck connect
+      try {
+        const adapter: any = wallet?.adapter ?? wallets?.[0]?.adapter ?? null;
+        if (adapter?.disconnect) await adapter.disconnect();
+      } catch {}
+
+      clearMwaCache();
     }
   }, [wallet, wallets, select, connected]);
+
+  const resetWalletSession = useCallback(async () => {
+    try {
+      setMsg("");
+      setConnectErr("");
+      setSessionVerified(false);
+
+      const adapter: any = wallet?.adapter ?? wallets?.[0]?.adapter ?? null;
+      if (adapter?.disconnect) {
+        try {
+          await adapter.disconnect();
+        } catch {}
+      }
+    } finally {
+      clearMwaCache();
+      // Hard reload to reset overlay state in webview/chrome
+      if (typeof window !== "undefined") window.location.reload();
+    }
+  }, [wallet, wallets]);
 
   // ---------- rescue quote ----------
   const loadRescueQuote = useCallback(async () => {
@@ -495,7 +544,14 @@ export default function Home() {
     } finally {
       setPaying(false);
     }
-  }, [publicKey, walletStr, rescueQuote, activeAdapter, loadStatus, loadRescueQuote]);
+  }, [
+    publicKey,
+    walletStr,
+    rescueQuote,
+    activeAdapter,
+    loadStatus,
+    loadRescueQuote,
+  ]);
 
   if (!mounted) return null;
 
@@ -546,9 +602,12 @@ export default function Home() {
           </div>
           <div>
             connected: {String(connected)} • connecting: {String(connecting)} •
-            disconnecting: {String(disconnecting)} • pubkey: {walletStr ?? "none"}
+            disconnecting: {String(disconnecting)} • pubkey:{" "}
+            {walletStr ?? "none"}
           </div>
-          {connectErr ? <div style={{ marginTop: 6 }}>last error: {connectErr}</div> : null}
+          {connectErr ? (
+            <div style={{ marginTop: 6 }}>last error: {connectErr}</div>
+          ) : null}
         </div>
 
         <div
@@ -576,9 +635,27 @@ export default function Home() {
             {connected ? "Disconnect wallet" : "Connect wallet"}
           </button>
 
+          <button
+            onClick={resetWalletSession}
+            style={{
+              marginTop: 10,
+              width: "100%",
+              padding: "10px",
+              borderRadius: 10,
+              background: "transparent",
+              border: "1px solid rgba(255,255,255,0.18)",
+              color: "#e5e7eb",
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            Reset wallet session
+          </button>
+
           {connected && (
             <div style={{ marginTop: 12, fontSize: 14, opacity: 0.85 }}>
-              Connected: <span style={{ fontWeight: 800 }}>{connectedLabel}</span>
+              Connected:{" "}
+              <span style={{ fontWeight: 800 }}>{connectedLabel}</span>
               {skrName && skrName.toLowerCase().endsWith(".skr") && (
                 <span
                   style={{
@@ -706,7 +783,8 @@ export default function Home() {
             </div>
 
             <div style={{ marginTop: 10, opacity: 0.7, fontSize: 12 }}>
-              Creates token accounts if needed, transfers SKR, then verifies on-chain.
+              Creates token accounts if needed, transfers SKR, then verifies
+              on-chain.
             </div>
           </div>
         )}
@@ -725,7 +803,8 @@ export default function Home() {
             border: "none",
             color: !sessionVerified || showRescueCard ? "#6b7280" : "#020617",
             fontWeight: 800,
-            cursor: !sessionVerified || showRescueCard ? "not-allowed" : "pointer",
+            cursor:
+              !sessionVerified || showRescueCard ? "not-allowed" : "pointer",
             marginBottom: 12,
           }}
         >

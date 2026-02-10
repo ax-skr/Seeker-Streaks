@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
 import "@solana/wallet-adapter-react-ui/styles.css";
 
@@ -10,24 +10,25 @@ import * as solanaMobile from "@solana-mobile/wallet-adapter-mobile";
 export default function Providers({ children }: { children: React.ReactNode }) {
   const endpoint = "https://api.mainnet-beta.solana.com";
 
-  // ✅ IMPORTANT: compute origin synchronously (no "blank origin" first render)
-  const origin = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return window.location.origin;
+  const [origin, setOrigin] = useState<string>("");
+  const [originReady, setOriginReady] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setOrigin(window.location.origin);
+      setOriginReady(true);
+    }
   }, []);
 
-  // ✅ Keep ONE stable adapter instance for the whole app lifecycle
-  const adapterRef = useRef<any>(null);
-
-  // Debug state (optional but helpful)
-  const [adapterName, setAdapterName] = useState<string>("none");
-  const [adapterReady, setAdapterReady] = useState<string>("unknown");
-
   const wallets = useMemo(() => {
-    const MobileAdapterCtor =
-      (solanaMobile as any).SolanaMobileWalletAdapter || (solanaMobile as any).default;
+    if (!originReady) return [];
 
-    const createDefaultAddressSelector = (solanaMobile as any).createDefaultAddressSelector;
+    const MobileAdapterCtor =
+      (solanaMobile as any).SolanaMobileWalletAdapter ||
+      (solanaMobile as any).default;
+
+    const createDefaultAddressSelector =
+      (solanaMobile as any).createDefaultAddressSelector;
     const createDefaultAuthorizationResultCache =
       (solanaMobile as any).createDefaultAuthorizationResultCache;
 
@@ -43,54 +44,40 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         ? createDefaultAddressSelector()
         : { select: async (addresses: string[]) => addresses?.[0] };
 
+    // IMPORTANT: keep the cache stable + recoverable
     const authorizationResultCache =
       typeof createDefaultAuthorizationResultCache === "function"
         ? createDefaultAuthorizationResultCache()
         : { clear: async () => {}, get: async () => null, set: async () => {} };
 
-    // ✅ Create once
-    if (!adapterRef.current) {
-      adapterRef.current = new MobileAdapterCtor({
-        addressSelector,
-        authorizationResultCache,
-        appIdentity: {
-          name: "Seeker Streaks",
-          // ✅ IMPORTANT: always provide a real URI
-          uri: origin || "https://seeker-streaks.vercel.app",
-          icon: origin ? `${origin}/icon-192.png` : "https://seeker-streaks.vercel.app/icon-192.png",
-        },
-      });
-
-      try {
-        setAdapterName(String(adapterRef.current?.name ?? "Mobile Wallet Adapter"));
-        setAdapterReady(String(adapterRef.current?.readyState ?? "unknown"));
-      } catch {}
+    try {
+      return [
+        new MobileAdapterCtor({
+          addressSelector,
+          authorizationResultCache,
+          // ✅ This matters: explicitly set cluster
+          cluster: "mainnet-beta",
+          appIdentity: {
+            name: "Seeker Streaks",
+            uri: origin || undefined,
+            icon: origin ? `${origin}/icon-192.png` : undefined,
+          },
+        }),
+      ];
+    } catch (e) {
+      console.error("[Providers] Failed to construct MWA adapter:", e);
+      return [];
     }
+  }, [origin, originReady]);
 
-    return [adapterRef.current];
-  }, [origin]);
-
-  // Keep debug labels updated (not required, but useful)
-  useEffect(() => {
-    const a = adapterRef.current;
-    if (!a) return;
-
-    const tick = () => {
-      try {
-        setAdapterName(String(a?.name ?? "Mobile Wallet Adapter"));
-        setAdapterReady(String(a?.readyState ?? "unknown"));
-      } catch {}
-    };
-
-    tick();
-    const id = setInterval(tick, 800);
-    return () => clearInterval(id);
+  const onError = useCallback((e: any) => {
+    console.error("[WalletProvider onError]", e);
   }, []);
 
   return (
     <ConnectionProvider endpoint={endpoint}>
-      {/* ✅ CRITICAL: autoConnect OFF (prevents stuck “dark overlay” loops) */}
-      <WalletProvider wallets={wallets} autoConnect={false}>
+      {/* ✅ FIX: turn OFF autoConnect for MWA stability */}
+      <WalletProvider wallets={wallets} autoConnect={false} onError={onError}>
         {children}
       </WalletProvider>
     </ConnectionProvider>
