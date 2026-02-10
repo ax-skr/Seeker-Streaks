@@ -16,8 +16,6 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   }, []);
 
   const wallets = useMemo(() => {
-    // ✅ IMPORTANT: don’t construct the adapter until we know the origin,
-    // otherwise it can be re-created and selection can get lost.
     if (!origin) return [];
 
     const MobileAdapterCtor =
@@ -61,7 +59,8 @@ export default function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <WalletProvider wallets={wallets} autoConnect>
+      {/* ✅ FIX: autoConnect OFF for MWA */}
+      <WalletProvider wallets={wallets} autoConnect={false}>
         {children}
       </WalletProvider>
     </ConnectionProvider>
