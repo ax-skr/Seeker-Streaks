@@ -1,8 +1,8 @@
 "use client";
 
-import { ReactNode, useMemo } from "react";
+import React, { useMemo } from "react";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
-import { clusterApiUrl } from "@solana/web3.js";
+import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
 
 import {
   SolanaMobileWalletAdapter,
@@ -10,31 +10,46 @@ import {
   createDefaultAuthorizationResultCache,
 } from "@solana-mobile/wallet-adapter-mobile";
 
-export default function Providers({ children }: { children: ReactNode }) {
-  const endpoint = useMemo(() => clusterApiUrl("mainnet-beta"), []);
+import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
+import { SolflareWalletAdapter } from "@solana/wallet-adapter-solflare";
+
+export default function Providers({ children }: { children: React.ReactNode }) {
+  const endpoint = "https://api.mainnet-beta.solana.com";
+
+  // client-only origin is safest for MWA
+  const uri = useMemo(() => {
+    if (typeof window !== "undefined") return window.location.origin;
+    return "https://seeker-streaks.vercel.app";
+  }, []);
 
   const wallets = useMemo(() => {
     const addressSelector = createDefaultAddressSelector();
     const authorizationResultCache = createDefaultAuthorizationResultCache();
 
-    const uri: string =
-      typeof window !== "undefined"
-        ? window.location.origin
-        : "https://seeker-streaks.vercel.app";
+    // Some versions of the MWA adapter have slightly different TS typings.
+    // Runtime is correct; cast keeps TS happy.
+    const mwa = new SolanaMobileWalletAdapter(
+      {
+        addressSelector,
+        authorizationResultCache,
+        appIdentity: {
+          name: "Seeker Streaks",
+          uri,
+          icon: "https://seeker-streaks.vercel.app/icon-192.png",
+        },
+      } as any
+    );
 
-    // 👇 Force the object to match the adapter's constructor type (fixes red underline)
-    const config = {
-      addressSelector,
-      authorizationResultCache,
-      appIdentity: {
-        name: "Seeker Streaks",
-        uri,
-        icon: "https://seeker-streaks.vercel.app/icon-192.png",
-      },
-    };
+    const phantom = new PhantomWalletAdapter();
 
-    return [new SolanaMobileWalletAdapter(config as any)];
-  }, []);
+    // Solflare expects WalletAdapterNetwork (not a raw string) in many versions
+    const solflare = new SolflareWalletAdapter({
+      network: WalletAdapterNetwork.Mainnet,
+    });
+
+    // Order matters: MWA first, then fallbacks (still hidden because no modal)
+    return [mwa, phantom, solflare];
+  }, [uri]);
 
   return (
     <ConnectionProvider endpoint={endpoint}>

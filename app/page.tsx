@@ -61,6 +61,7 @@ function shortWallet(w?: string | null) {
   return `${w.slice(0, 4)}…${w.slice(-4)}`;
 }
 
+// Not perfect, but useful for the banner
 function uaHasSolanaMobileHints(): boolean {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent || "";
@@ -117,9 +118,6 @@ export default function Home() {
   useEffect(() => setMounted(true), []);
   useEffect(() => setUaMobile(uaHasSolanaMobileHints()), []);
 
-  const walletStr = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
-
-  // Reset UI when wallet changes
   useEffect(() => {
     setSessionVerified(false);
     setStatus(null);
@@ -129,38 +127,42 @@ export default function Home() {
     setMsg("");
     setConnectErr("");
     setUiBusy(false);
-  }, [walletStr]);
+  }, [publicKey]);
 
-  /**
-   * Since you ONLY want Mobile Wallet Adapter now:
-   * - If there is exactly 1 wallet adapter, always select it automatically.
-   * This prevents WalletNotSelectedError.
-   */
-  useEffect(() => {
-    if (!mounted) return;
-    if (wallet) return;
-    if (!wallets || wallets.length === 0) return;
+  const walletStr = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
 
-    // pick the only adapter OR the first loadable/installed one
-    const best =
-      wallets.find((w) =>
-        [WalletReadyState.Installed, WalletReadyState.Loadable].includes(
-          w.adapter?.readyState
-        )
-      ) ?? wallets[0];
+  // Helper so TS stops complaining about select() argument type
+  const selectWallet = useCallback(
+    (name: string) => select(name as any),
+    [select]
+  );
 
-    if (best?.adapter?.name) {
-      try {
-        select(best.adapter.name);
-      } catch {}
-    }
-  }, [mounted, wallet, wallets, select]);
+  const mwaName = useMemo(() => {
+    const w = wallets?.find((x) =>
+      /mobile wallet adapter/i.test(String(x?.adapter?.name || ""))
+    );
+    return w?.adapter?.name ? String(w.adapter.name) : null;
+  }, [wallets]);
 
-  const selectedName = useMemo(
+  const phantomName = useMemo(() => {
+    const w = wallets?.find((x) =>
+      /phantom/i.test(String(x?.adapter?.name || ""))
+    );
+    return w?.adapter?.name ? String(w.adapter.name) : null;
+  }, [wallets]);
+
+  const solflareName = useMemo(() => {
+    const w = wallets?.find((x) =>
+      /solflare/i.test(String(x?.adapter?.name || ""))
+    );
+    return w?.adapter?.name ? String(w.adapter.name) : null;
+  }, [wallets]);
+
+  const activeAdapterName = useMemo(
     () => String(wallet?.adapter?.name ?? "None"),
     [wallet]
   );
-  const selectedReadyState = useMemo(
+  const activeReadyState = useMemo(
     () => String(wallet?.adapter?.readyState ?? "Unknown"),
     [wallet]
   );
@@ -171,24 +173,19 @@ export default function Home() {
       setConnectErr("");
       setUiBusy(true);
 
-      // Disconnect if possible
       try {
         if (connected) await disconnect();
       } catch {}
 
-      // Clear wallet-adapter storage keys (fixes half-sessions)
       try {
         if (typeof window !== "undefined") {
           const keys = Object.keys(window.localStorage);
           for (const k of keys) {
-            if (
-              k.startsWith("walletAdapter") ||
-              k === "walletName" ||
-              k.includes("walletName")
-            ) {
+            if (k.startsWith("walletAdapter") || k.includes("walletName")) {
               window.localStorage.removeItem(k);
             }
           }
+          window.localStorage.removeItem("walletName");
         }
       } catch {}
 
@@ -197,6 +194,18 @@ export default function Home() {
       setUiBusy(false);
     }
   }, [connected, disconnect]);
+
+  // Connect helper: select -> connect -> wait -> return pubkey or null
+  const doSelectAndConnect = useCallback(
+    async (name: string) => {
+      selectWallet(name);
+      await new Promise((r) => setTimeout(r, 80));
+      await connect();
+      await new Promise((r) => setTimeout(r, 700));
+      return publicKey ?? null;
+    },
+    [selectWallet, connect, publicKey]
+  );
 
   const handleConnect = useCallback(async () => {
     const attempt = ++connectAttemptId.current;
@@ -211,41 +220,65 @@ export default function Home() {
         return;
       }
 
-      // Make sure a wallet is selected
-      if (!wallet) {
-        const best =
-          wallets.find((w) =>
-            [WalletReadyState.Installed, WalletReadyState.Loadable].includes(
-              w.adapter?.readyState
-            )
-          ) ?? wallets[0];
+      if (!wallets || wallets.length === 0) {
+        setMsg("No wallet adapters detected.");
+        return;
+      }
 
-        const name = best?.adapter?.name;
-        if (!name) {
-          setConnectErr("No wallet adapters available.");
-          return;
+      // Order: MWA -> Phantom -> Solflare (fallbacks are hidden, no buttons)
+      const order: string[] = [mwaName, phantomName, solflareName].filter(
+        (x: string | null | undefined): x is string =>
+          typeof x === "string" && x.length > 0
+      );
+
+      if (order.length === 0) {
+        setMsg("No usable wallets found.");
+        return;
+      }
+
+      // Try each in order until we get a pubkey
+      for (const name of order) {
+        if (connectAttemptId.current !== attempt) return;
+
+        // Skip wallets that aren’t installed/loadable
+        const w = wallets.find((x) => String(x?.adapter?.name || "") === name);
+        const rs = w?.adapter?.readyState;
+
+        if (
+          rs !== WalletReadyState.Installed &&
+          rs !== WalletReadyState.Loadable
+        ) {
+          continue;
         }
 
-        select(name);
-        // let React apply selection
-        await new Promise((r) => setTimeout(r, 50));
-      }
-
-      // Connect via hook (best compatibility)
-      await connect();
-
-      // Give the Seed Vault flow a moment to return a pubkey
-      await new Promise((r) => setTimeout(r, 650));
-      if (connectAttemptId.current !== attempt) return;
-
-      if (!publicKey) {
-        setConnectErr(
-          "Connected session returned but no public key. This usually means the Seed Vault approval screen did not complete on the device. Tap 'Reset wallet session' then try Connect again."
-        );
         try {
-          await disconnect();
-        } catch {}
+          const pk = await doSelectAndConnect(name);
+          if (pk) {
+            // success
+            return;
+          }
+
+          // If connect resolved but no pubkey, clean up and try next
+          try {
+            await disconnect();
+          } catch {}
+        } catch (e: any) {
+          // cleanup and try next
+          try {
+            await disconnect();
+          } catch {}
+          continue;
+        }
       }
+
+      // If none worked:
+      const mwaTried = !!mwaName;
+      const hint =
+        mwaTried && !uaMobile
+          ? "Seed Vault (MWA) may not complete in normal Chrome. It works best inside the installed Seeker TWA."
+          : "Wallet authorization UI did not complete.";
+
+      setConnectErr(`Connected session returned but no public key. ${hint}`);
     } catch (e: any) {
       const m = e?.message ? String(e.message) : String(e);
       setConnectErr(m);
@@ -256,7 +289,16 @@ export default function Home() {
     } finally {
       setUiBusy(false);
     }
-  }, [connected, disconnect, wallet, wallets, select, connect, publicKey]);
+  }, [
+    connected,
+    disconnect,
+    wallets,
+    mwaName,
+    phantomName,
+    solflareName,
+    doSelectAndConnect,
+    uaMobile,
+  ]);
 
   // ---------- rescue quote ----------
   const loadRescueQuote = useCallback(async () => {
@@ -602,8 +644,9 @@ export default function Home() {
           <div style={{ fontWeight: 900, marginBottom: 6 }}>Debug</div>
           <div>UA hints SolanaMobile/SeedVault/Seeker: {String(uaMobile)}</div>
           <div>wallets (adapter-react): {wallets?.length ?? 0}</div>
-          <div>selected wallet: {selectedName}</div>
-          <div>readyState: {selectedReadyState}</div>
+          <div>
+            selected wallet: {activeAdapterName} • readyState: {activeReadyState}
+          </div>
           <div>
             connected: {String(connected)} • connecting: {String(connecting)} •
             disconnecting: {String(disconnecting)} • pubkey:{" "}
@@ -695,23 +738,6 @@ export default function Home() {
           )}
         </div>
 
-        {connectErr && (
-          <div
-            style={{
-              marginBottom: 14,
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "rgba(2,6,23,0.6)",
-              fontSize: 13,
-              lineHeight: 1.4,
-              opacity: 0.95,
-            }}
-          >
-            {connectErr}
-          </div>
-        )}
-
         {status && (
           <div
             style={{
@@ -785,10 +811,6 @@ export default function Home() {
             >
               {resetting ? "Resetting…" : "Reset streak (free)"}
             </button>
-
-            <div style={{ marginTop: 10, opacity: 0.75, fontSize: 12 }}>
-              Resets streak to <strong>1</strong> but refreshes rescues.
-            </div>
           </div>
         )}
 
