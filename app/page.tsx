@@ -1,11 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletReadyState } from "@solana/wallet-adapter-base";
-import type { WalletName } from "@solana/wallet-adapter-base";
-
+import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import {
   Connection,
   PublicKey,
@@ -17,6 +15,11 @@ import {
   createTransferCheckedInstruction,
   createAssociatedTokenAccountIdempotentInstruction,
 } from "@solana/spl-token";
+
+const WalletMultiButton = dynamic(
+  async () => (await import("@solana/wallet-adapter-react-ui")).WalletMultiButton,
+  { ssr: false }
+);
 
 type BlockhashResult = {
   conn: Connection;
@@ -62,12 +65,6 @@ function shortWallet(w?: string | null) {
   return `${w.slice(0, 4)}…${w.slice(-4)}`;
 }
 
-function uaHintsSeekerOrSeedVault(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const ua = navigator.userAgent || "";
-  return /SolanaMobile|SeedVault|Seeker/i.test(ua);
-}
-
 // ---------- types ----------
 type RescueQuote = {
   ok: boolean;
@@ -83,24 +80,14 @@ type RescueQuote = {
 };
 
 export default function Home() {
-  const {
-    publicKey,
-    connected,
-    wallet,
-    wallets,
-    select,
-    connect,
-    disconnect,
-    signMessage,
-  } = useWallet();
+  const { publicKey, connected, signMessage, wallet } = useWallet();
+  const { connection } = useConnection(); // kept if you use it elsewhere
 
   const [mounted, setMounted] = useState(false);
   const [sessionVerified, setSessionVerified] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [status, setStatus] = useState<any>(null);
   const [msg, setMsg] = useState<string>("");
-  const [connectErr, setConnectErr] = useState<string>("");
-  const [uiBusy, setUiBusy] = useState(false);
 
   const [skrName, setSkrName] = useState<string | null>(null);
   const lastResolvedWallet = useRef<string | null>(null);
@@ -108,9 +95,6 @@ export default function Home() {
   const [rescueQuote, setRescueQuote] = useState<RescueQuote | null>(null);
   const [paying, setPaying] = useState(false);
   const [resetting, setResetting] = useState(false);
-
-  const connectAttemptId = useRef(0);
-  const uaSeeker = useMemo(() => uaHintsSeekerOrSeedVault(), []);
 
   useEffect(() => setMounted(true), []);
 
@@ -121,121 +105,9 @@ export default function Home() {
     setRescueQuote(null);
     lastResolvedWallet.current = null;
     setMsg("");
-    setConnectErr("");
-    setUiBusy(false);
   }, [publicKey]);
 
   const walletStr = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
-
-  const mwaName = useMemo(() => {
-    const mwa = wallets?.find((w) =>
-      /mobile wallet adapter/i.test(String(w.adapter?.name || ""))
-    );
-    return mwa?.adapter?.name ?? null;
-  }, [wallets]);
-
-  const phantomName = useMemo(() => {
-    const ph = wallets?.find((w) =>
-      /phantom/i.test(String(w.adapter?.name || ""))
-    );
-    return ph?.adapter?.name ?? null;
-  }, [wallets]);
-
-  const solflareName = useMemo(() => {
-    const sf = wallets?.find((w) =>
-      /solflare/i.test(String(w.adapter?.name || ""))
-    );
-    return sf?.adapter?.name ?? null;
-  }, [wallets]);
-
-  // Pick wallet automatically:
-  // - In Seeker/TWA: prefer MWA first (Seed Vault)
-  // - In normal Chrome: prefer Phantom first (this is what "worked before")
-  const preferredOrder = useMemo(() => {
-    const order = uaSeeker
-      ? [mwaName, phantomName, solflareName]
-      : [phantomName, solflareName, mwaName];
-
-    return order.filter(Boolean) as WalletName[];
-  }, [uaSeeker, mwaName, phantomName, solflareName]);
-
-  const doSelectAndConnect = useCallback(
-    async (walletName: WalletName): Promise<boolean> => {
-      select(walletName);
-      await new Promise((r) => setTimeout(r, 80));
-      await connect();
-      await new Promise((r) => setTimeout(r, 700));
-      return !!publicKey;
-    },
-    [select, connect, publicKey]
-  );
-
-  const handleConnect = useCallback(async () => {
-    const attempt = ++connectAttemptId.current;
-
-    try {
-      setMsg("");
-      setConnectErr("");
-      setUiBusy(true);
-
-      if (connected) {
-        await disconnect();
-        return;
-      }
-
-      if (!wallets || wallets.length === 0) {
-        setConnectErr("No wallet adapters detected.");
-        return;
-      }
-
-      // Try in preferred order, skipping wallets that aren't installed/loadable
-      for (const name of preferredOrder) {
-        if (connectAttemptId.current !== attempt) return;
-
-        const w = wallets.find((x) => x.adapter?.name === name);
-        const rs = w?.adapter?.readyState;
-
-        // Allow Installed + Loadable (Loadable is common for MWA)
-        if (
-          rs !== WalletReadyState.Installed &&
-          rs !== WalletReadyState.Loadable
-        ) {
-          continue;
-        }
-
-        const ok = await doSelectAndConnect(name);
-        if (ok) return;
-
-        // cleanup between tries
-        try {
-          await disconnect();
-        } catch {}
-      }
-
-      // If we got here: connect resolved but no pubkey, or nothing usable
-      const hint = uaSeeker
-        ? "If you're inside Seeker/TWA, approve the Seed Vault prompt and try again."
-        : "In normal Chrome, Phantom usually works best (and this is what your setup previously used).";
-
-      setConnectErr(`Connected session returned but no public key. ${hint}`);
-    } catch (e: any) {
-      const m = e?.message ? String(e.message) : String(e);
-      setConnectErr(m);
-      setMsg(`Connect failed: ${m}`);
-      try {
-        await disconnect();
-      } catch {}
-    } finally {
-      setUiBusy(false);
-    }
-  }, [
-    connected,
-    disconnect,
-    wallets,
-    preferredOrder,
-    doSelectAndConnect,
-    uaSeeker,
-  ]);
 
   // ---------- rescue quote ----------
   const loadRescueQuote = useCallback(async () => {
@@ -248,7 +120,12 @@ export default function Home() {
       cache: "no-store",
     });
 
-    if (!res.ok) return;
+    if (!res.ok) {
+      const t = await res.text();
+      setMsg(`Rescue quote failed (${res.status}).`);
+      console.error("rescue-quote error:", t);
+      return;
+    }
 
     const q = (await res.json()) as RescueQuote;
     setRescueQuote(q);
@@ -414,13 +291,16 @@ export default function Home() {
 
       const json = await res.json().catch(() => ({}));
 
-      if (!res.ok) throw new Error(json?.error || "Failed to reset streak");
+      if (!res.ok) {
+        throw new Error(json?.error || "Failed to reset streak");
+      }
 
       setMsg("Streak reset — rescues refreshed. Keep checking in daily.");
       setRescueQuote(null);
       await loadStatus();
       await loadRescueQuote();
     } catch (e: any) {
+      console.error(e);
       setMsg(e?.message || "Failed to reset streak");
     } finally {
       setResetting(false);
@@ -476,8 +356,10 @@ export default function Home() {
         ),
       ];
 
-      const { conn: rpcConn, blockhash, lastValidBlockHeight } =
+      const { conn: rpcConn, blockhash, lastValidBlockHeight, rpc } =
         await getWorkingConnectionForBlockhash();
+
+      console.info(`[payRescue] using rpc=${rpc} (v0 tx)`);
 
       const msgV0 = new TransactionMessage({
         payerKey: publicKey,
@@ -486,6 +368,7 @@ export default function Home() {
       }).compileToV0Message();
 
       const vtx = new VersionedTransaction(msgV0);
+
       const signed: VersionedTransaction = await adapter.signTransaction(vtx);
 
       const sig = await rpcConn.sendRawTransaction(signed.serialize(), {
@@ -512,12 +395,16 @@ export default function Home() {
       });
 
       const commitJson = await commitRes.json().catch(() => ({}));
-      if (!commitRes.ok) throw new Error(commitJson.error || "Commit failed");
+
+      if (!commitRes.ok) {
+        throw new Error(commitJson.error || "Commit failed");
+      }
 
       setMsg(`Rescued ${commitJson.rescuedDays} day(s) ✓`);
       await loadStatus();
       await loadRescueQuote();
     } catch (e: any) {
+      console.error(e);
       setMsg(e?.message || "Payment failed");
     } finally {
       setPaying(false);
@@ -557,35 +444,27 @@ export default function Home() {
             border: "1px solid rgba(255,255,255,0.08)",
             borderRadius: 14,
             padding: 16,
-            marginBottom: 12,
+            marginBottom: 16,
           }}
         >
-          <button
-            onClick={handleConnect}
-            disabled={uiBusy}
-            style={{
-              width: "100%",
-              padding: "12px",
-              borderRadius: 10,
-              background: "linear-gradient(90deg,#7c3aed,#22d3ee)",
-              border: "none",
-              color: "#020617",
-              fontWeight: 700,
-              cursor: uiBusy ? "not-allowed" : "pointer",
-              opacity: uiBusy ? 0.7 : 1,
-            }}
-          >
-            {connected
-              ? "Disconnect wallet"
-              : uiBusy
-              ? "Connecting…"
-              : "Connect wallet"}
-          </button>
+          <WalletMultiButton />
 
           {connected && (
             <div style={{ marginTop: 12, fontSize: 14, opacity: 0.85 }}>
               Connected:{" "}
               <span style={{ fontWeight: 800 }}>{connectedLabel}</span>
+              {skrName && skrName.toLowerCase().endsWith(".skr") && (
+                <span
+                  style={{
+                    marginLeft: 8,
+                    color: "#22d3ee",
+                    fontWeight: 900,
+                    textShadow: "0 0 10px rgba(34,211,238,0.35)",
+                  }}
+                >
+                  •
+                </span>
+              )}
             </div>
           )}
 
@@ -603,7 +482,6 @@ export default function Home() {
                 color: "#020617",
                 fontWeight: 700,
                 cursor: "pointer",
-                opacity: verifying ? 0.7 : 1,
               }}
             >
               {verifying ? "Verifying…" : "Verify wallet"}
@@ -616,23 +494,6 @@ export default function Home() {
             </div>
           )}
         </div>
-
-        {connectErr && (
-          <div
-            style={{
-              marginBottom: 14,
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "rgba(2,6,23,0.6)",
-              fontSize: 13,
-              lineHeight: 1.4,
-              opacity: 0.95,
-            }}
-          >
-            {connectErr}
-          </div>
-        )}
 
         {status && (
           <div
@@ -671,6 +532,7 @@ export default function Home() {
               <strong>{rescueQuote!.costSKR} SKR</strong> to keep your streak.
             </div>
 
+            {/* Primary: Pay */}
             <button
               onClick={payRescue}
               disabled={paying || resetting}
@@ -683,12 +545,12 @@ export default function Home() {
                 color: "#020617",
                 fontWeight: 900,
                 cursor: paying || resetting ? "not-allowed" : "pointer",
-                opacity: paying || resetting ? 0.7 : 1,
               }}
             >
               {paying ? "Paying…" : `Pay ${rescueQuote!.costSKR} SKR`}
             </button>
 
+            {/* Secondary: Reset */}
             <button
               onClick={resetStreak}
               disabled={resetting || paying}
@@ -702,14 +564,18 @@ export default function Home() {
                 color: "#e5e7eb",
                 fontWeight: 900,
                 cursor: resetting || paying ? "not-allowed" : "pointer",
-                opacity: resetting || paying ? 0.7 : 1,
               }}
             >
               {resetting ? "Resetting…" : "Reset streak (free)"}
             </button>
 
-            <div style={{ marginTop: 10, opacity: 0.75, fontSize: 12 }}>
-              Resets streak to <strong>1</strong> but refreshes rescues.
+            <div style={{ marginTop: 10, opacity: 0.75, fontSize: 12, lineHeight: 1.4 }}>
+              Resets your streak to <strong>1</strong> but <strong>refreshes rescues</strong>.
+              You still keep your points.
+            </div>
+
+            <div style={{ marginTop: 10, opacity: 0.7, fontSize: 12 }}>
+              Creates token accounts if needed, transfers SKR, then verifies on-chain.
             </div>
           </div>
         )}
