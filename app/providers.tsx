@@ -2,59 +2,55 @@
 
 import React, { useMemo } from "react";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
-import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
+import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
+import { clusterApiUrl } from "@solana/web3.js";
 
+// IMPORTANT: this is the correct package you installed
 import {
   SolanaMobileWalletAdapter,
   createDefaultAddressSelector,
   createDefaultAuthorizationResultCache,
+  createDefaultWalletNotFoundHandler,
 } from "@solana-mobile/wallet-adapter-mobile";
 
-import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
-import { SolflareWalletAdapter } from "@solana/wallet-adapter-solflare";
+// If you use the wallet-adapter UI styles anywhere
+import "@solana/wallet-adapter-react-ui/styles.css";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
-  const endpoint = "https://api.mainnet-beta.solana.com";
+  const endpoint = useMemo(() => clusterApiUrl("mainnet-beta"), []);
 
-  // client-only origin is safest for MWA
+  // MUST be client-safe: Seed Vault uses the app identity origin
   const uri = useMemo(() => {
-    if (typeof window !== "undefined") return window.location.origin;
-    return "https://seeker-streaks.vercel.app";
+    if (typeof window === "undefined") return "https://seeker-streaks.vercel.app";
+    return window.location.origin;
   }, []);
 
   const wallets = useMemo(() => {
     const addressSelector = createDefaultAddressSelector();
     const authorizationResultCache = createDefaultAuthorizationResultCache();
+    const walletNotFoundHandler = createDefaultWalletNotFoundHandler();
 
-    // Some versions of the MWA adapter have slightly different TS typings.
-    // Runtime is correct; cast keeps TS happy.
-    const mwa = new SolanaMobileWalletAdapter(
-      {
-        addressSelector,
-        authorizationResultCache,
-        appIdentity: {
-          name: "Seeker Streaks",
-          uri,
-          icon: "https://seeker-streaks.vercel.app/icon-192.png",
-        },
-      } as any
-    );
+    // Force ONLY Seed Vault / Solana Mobile Wallet Adapter.
+    // Cast to any to avoid TS being picky across package versions.
+    const mwa = new SolanaMobileWalletAdapter({
+      addressSelector,
+      authorizationResultCache,
+      onWalletNotFound: walletNotFoundHandler,
+      appIdentity: {
+        name: "Seeker Streaks",
+        uri,
+        icon: `${uri}/icon-192.png`,
+      },
+      cluster: "mainnet-beta",
+    } as any);
 
-    const phantom = new PhantomWalletAdapter();
-
-    // Solflare expects WalletAdapterNetwork (not a raw string) in many versions
-    const solflare = new SolflareWalletAdapter({
-      network: WalletAdapterNetwork.Mainnet,
-    });
-
-    // Order matters: MWA first, then fallbacks (still hidden because no modal)
-    return [mwa, phantom, solflare];
+    return [mwa];
   }, [uri]);
 
   return (
     <ConnectionProvider endpoint={endpoint}>
       <WalletProvider wallets={wallets} autoConnect={false}>
-        {children}
+        <WalletModalProvider>{children}</WalletModalProvider>
       </WalletProvider>
     </ConnectionProvider>
   );
