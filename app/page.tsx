@@ -75,8 +75,16 @@ type RescueQuote = {
 };
 
 export default function Home() {
-  const { publicKey, connected, disconnect, connect, signMessage, wallet } =
-    useWallet();
+  const {
+    publicKey,
+    connected,
+    disconnect,
+    connect,
+    signMessage,
+    wallet,
+    wallets,
+    select,
+  } = useWallet();
 
   const [mounted, setMounted] = useState(false);
   const [sessionVerified, setSessionVerified] = useState(false);
@@ -109,36 +117,11 @@ export default function Home() {
 
   const walletStr = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
 
-  const hardResetWalletSession = useCallback(async () => {
-    try {
-      setMsg("");
-      setConnectErr("");
-      setUiBusy(true);
-
-      // 1) Disconnect if possible
-      try {
-        if (connected) await disconnect();
-      } catch {}
-
-      // 2) Clear wallet-adapter localStorage keys (fixes stuck half-sessions)
-      try {
-        if (typeof window !== "undefined") {
-          const keys = Object.keys(window.localStorage);
-          for (const k of keys) {
-            if (k.startsWith("walletAdapter") || k.includes("walletName")) {
-              window.localStorage.removeItem(k);
-            }
-          }
-          window.localStorage.removeItem("walletName");
-        }
-      } catch {}
-
-      setMsg("Wallet session reset. Now try Connect wallet again.");
-    } finally {
-      setUiBusy(false);
-    }
-  }, [connected, disconnect]);
-
+  /**
+   * IMPORTANT FIX:
+   * WalletNotSelectedError happens when connect() is called without a selected wallet.
+   * Since you want ONLY MWA, we select the only available adapter before connect().
+   */
   const handleConnect = useCallback(async () => {
     try {
       setMsg("");
@@ -150,6 +133,21 @@ export default function Home() {
         return;
       }
 
+      if (!wallets || wallets.length === 0) {
+        setConnectErr("No wallet adapters available.");
+        return;
+      }
+
+      // If nothing selected, select the first wallet (should be Mobile Wallet Adapter only)
+      const currentName = wallet?.adapter?.name;
+      const firstName = wallets[0]?.adapter?.name;
+
+      if (!currentName && firstName) {
+        select(firstName);
+        // allow state to update
+        await new Promise((r) => setTimeout(r, 50));
+      }
+
       await connect();
 
       // give the adapter a moment to populate publicKey after approval
@@ -158,7 +156,7 @@ export default function Home() {
       if (!publicKey) {
         setConnectErr(
           "Connected session returned but no public key. This means the Seed Vault approval screen did not complete. " +
-            "Open the installed Seeker Streaks app (TWA build) and try again, or open inside a Solana Mobile / Seed Vault compatible in-app browser."
+            "Try opening the installed Seeker Streaks app (TWA build) and connect from there."
         );
 
         try {
@@ -175,7 +173,7 @@ export default function Home() {
     } finally {
       setUiBusy(false);
     }
-  }, [connected, disconnect, connect, publicKey]);
+  }, [connected, disconnect, connect, publicKey, wallets, select, wallet]);
 
   // ---------- rescue quote ----------
   const loadRescueQuote = useCallback(async () => {
@@ -528,25 +526,6 @@ export default function Home() {
             }}
           >
             {connected ? "Disconnect wallet" : uiBusy ? "Connecting…" : "Connect wallet"}
-          </button>
-
-          <button
-            onClick={hardResetWalletSession}
-            disabled={uiBusy}
-            style={{
-              marginTop: 10,
-              width: "100%",
-              padding: "12px",
-              borderRadius: 10,
-              background: "transparent",
-              border: "1px solid rgba(255,255,255,0.18)",
-              color: "#e5e7eb",
-              fontWeight: 800,
-              cursor: uiBusy ? "not-allowed" : "pointer",
-              opacity: uiBusy ? 0.7 : 1,
-            }}
-          >
-            Reset wallet session
           </button>
 
           {connected && (
