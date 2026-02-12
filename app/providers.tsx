@@ -1,47 +1,81 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { ConnectionProvider, WalletProvider } from "@solana/wallet-adapter-react";
-import { clusterApiUrl } from "@solana/web3.js";
+import { WalletModalProvider } from "@solana/wallet-adapter-react-ui";
+import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
+import { SolflareWalletAdapter } from "@solana/wallet-adapter-solflare";
+import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
+import * as solanaMobile from "@solana-mobile/wallet-adapter-mobile";
 
-import {
-  SolanaMobileWalletAdapter,
-  createDefaultAddressSelector,
-  createDefaultAuthorizationResultCache,
-  createDefaultWalletNotFoundHandler,
-} from "@solana-mobile/wallet-adapter-mobile";
+import "@solana/wallet-adapter-react-ui/styles.css";
+
+function isSolanaMobileDevice() {
+  if (typeof window === "undefined") return false;
+  return /SolanaMobile|SeedVault|Seeker/i.test(navigator.userAgent);
+}
 
 export default function Providers({ children }: { children: React.ReactNode }) {
-  // web3 cluster string (keeps TS happy)
-  const endpoint = useMemo(() => clusterApiUrl("mainnet-beta"), []);
+  /**
+   * IMPORTANT:
+   * Hard-force a public RPC that does not 403.
+   * Do NOT read NEXT_PUBLIC_SOLANA_RPC_URL until everything works.
+   */
+  const endpoint = "https://api.mainnet-beta.solana.com";
+
+  useEffect(() => {
+    // This will show in your devtools/console (desktop + mobile remote debugging)
+    console.log("[ConnectionProvider] endpoint =", endpoint);
+  }, [endpoint]);
 
   const wallets = useMemo(() => {
-    const uri =
-      typeof window !== "undefined"
-        ? window.location.origin
-        : "https://seeker-streaks.vercel.app";
+    // Desktop
+    if (!isSolanaMobileDevice()) {
+      return [
+        new PhantomWalletAdapter(),
+        new SolflareWalletAdapter({ network: WalletAdapterNetwork.Mainnet }),
+      ];
+    }
 
-    const mwa = new SolanaMobileWalletAdapter({
-      addressSelector: createDefaultAddressSelector(),
-      authorizationResultCache: createDefaultAuthorizationResultCache(),
-      appIdentity: {
-        name: "Seeker Streaks",
-        uri,
-        icon: "https://seeker-streaks.vercel.app/icon-192.png",
-      },
-      // MWA expects a cluster-ish value; "mainnet-beta" works and removes your TS "network" underline
-      cluster: "mainnet-beta",
-      onWalletNotFound: createDefaultWalletNotFoundHandler(),
-    } as any);
+    // Solana Mobile / Seed Vault / Seeker
+    const MobileAdapter = (solanaMobile as any).SolanaMobileWalletAdapter;
+    if (!MobileAdapter) return [];
 
-    // MWA ONLY — no Phantom, no Solflare
-    return [mwa];
+    const createDefaultAddressSelector =
+      (solanaMobile as any).createDefaultAddressSelector;
+    const createDefaultAuthorizationResultCache =
+      (solanaMobile as any).createDefaultAuthorizationResultCache;
+
+    const addressSelector =
+      typeof createDefaultAddressSelector === "function"
+        ? createDefaultAddressSelector()
+        : { select: async (addresses: string[]) => addresses?.[0] };
+
+    const authorizationResultCache =
+      typeof createDefaultAuthorizationResultCache === "function"
+        ? createDefaultAuthorizationResultCache()
+        : { clear: async () => {}, get: async () => null, set: async () => {} };
+
+    return [
+      new MobileAdapter({
+        addressSelector,
+        authorizationResultCache,
+        appIdentity: {
+          name: "Seeker Streaks",
+          uri: typeof window !== "undefined" ? window.location.origin : "",
+          icon:
+            typeof window !== "undefined"
+              ? `${window.location.origin}/favicon.ico`
+              : undefined,
+        },
+      }),
+    ];
   }, []);
 
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <WalletProvider wallets={wallets} autoConnect={false}>
-        {children}
+      <WalletProvider wallets={wallets} autoConnect>
+        <WalletModalProvider>{children}</WalletModalProvider>
       </WalletProvider>
     </ConnectionProvider>
   );
