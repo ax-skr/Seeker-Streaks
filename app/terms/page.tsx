@@ -35,7 +35,7 @@ export default function TermsPage() {
         </p>
 
         <p className="text-sm opacity-70">
-          © {new Date().getFullYear()} Seeker Streaks
+          © {new Date().getFullYear()} Seeker Streaks. All rights reserved.
         </p>
       </div>
     </main>
