@@ -4,7 +4,6 @@ import { PublicKey } from "@solana/web3.js";
 
 const MAX_RESCUE_DAYS = 4;
 const SKR_PER_DAY = 500;
-
 const SKR_DECIMALS = 6;
 
 const SKR_MINT = new PublicKey(
@@ -14,7 +13,6 @@ const SKR_MINT = new PublicKey(
 const TREASURY_WALLET = new PublicKey(
   process.env.TREASURY_WALLET || process.env.NEXT_PUBLIC_TREASURY_WALLET || ""
 );
-
 
 function todayUTCISO(): string {
   const now = new Date();
@@ -51,7 +49,6 @@ export async function POST(req: NextRequest) {
     }
 
     const u = user;
-
     const today = todayUTCISO();
 
     let missedDays = 0;
@@ -63,21 +60,29 @@ export async function POST(req: NextRequest) {
     const remainingRescue = Math.max(0, MAX_RESCUE_DAYS - used);
 
     const canRescue =
-      missedDays > 0 &&
-      missedDays <= remainingRescue &&
-      missedDays <= MAX_RESCUE_DAYS;
+      missedDays > 0 && missedDays <= remainingRescue && missedDays <= MAX_RESCUE_DAYS;
 
     const costSKR = canRescue ? missedDays * SKR_PER_DAY : 0;
 
+    // ✅ Translation layer: return BOTH old + new keys
     return NextResponse.json({
       ok: true,
       verified: !!u?.verified_at,
       streak: u?.streak ?? 0,
       points: u?.points ?? 0,
       missedDays,
+
+      // OLD keys
       canRescue,
       costSKR,
       remainingRescue,
+
+      // NEW keys
+      canProtect: canRescue,
+      protectionRequired: canRescue,
+      protectionCostSKR: costSKR,
+      protectionsLeft: remainingRescue,
+
       treasury: TREASURY_WALLET.toBase58(),
       mint: SKR_MINT.toBase58(),
       decimals: SKR_DECIMALS,

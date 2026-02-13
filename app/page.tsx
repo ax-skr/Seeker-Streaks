@@ -70,10 +70,18 @@ type RescueQuote = {
   ok: boolean;
   verified: boolean;
   missedDays: number;
-  canRescue: boolean;
-  costSKR: number;
+
+  // old keys (still possible)
+  canRescue?: boolean;
+  costSKR?: number;
+  remainingRescue?: number;
+
+  // new keys (preferred)
+  canProtect?: boolean;
+  protectionCostSKR?: number;
+  protectionsLeft?: number;
+
   streak: number;
-  remainingRescue: number;
   treasury: string;
   mint: string;
   decimals?: number;
@@ -81,7 +89,7 @@ type RescueQuote = {
 
 export default function Home() {
   const { publicKey, connected, signMessage, wallet } = useWallet();
-  const { connection } = useConnection(); // kept if you use it elsewhere
+  const { connection } = useConnection();
 
   const [mounted, setMounted] = useState(false);
   const [sessionVerified, setSessionVerified] = useState(false);
@@ -92,7 +100,7 @@ export default function Home() {
   const [skrName, setSkrName] = useState<string | null>(null);
   const lastResolvedWallet = useRef<string | null>(null);
 
-  const [rescueQuote, setRescueQuote] = useState<RescueQuote | null>(null);
+  const [quote, setQuote] = useState<RescueQuote | null>(null);
   const [paying, setPaying] = useState(false);
   const [resetting, setResetting] = useState(false);
 
@@ -102,15 +110,15 @@ export default function Home() {
     setSessionVerified(false);
     setStatus(null);
     setSkrName(null);
-    setRescueQuote(null);
+    setQuote(null);
     lastResolvedWallet.current = null;
     setMsg("");
   }, [publicKey]);
 
   const walletStr = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
 
-  // ---------- rescue quote ----------
-  const loadRescueQuote = useCallback(async () => {
+  // ---------- load protection quote (same route) ----------
+  const loadQuote = useCallback(async () => {
     if (!walletStr) return;
 
     const res = await fetch("/api/checkin/rescue-quote", {
@@ -122,13 +130,13 @@ export default function Home() {
 
     if (!res.ok) {
       const t = await res.text();
-      setMsg(`Rescue quote failed (${res.status}).`);
-      console.error("rescue-quote error:", t);
+      setMsg(`Protection quote failed (${res.status}).`);
+      console.error("quote error:", t);
       return;
     }
 
     const q = (await res.json()) as RescueQuote;
-    setRescueQuote(q);
+    setQuote(q);
   }, [walletStr]);
 
   // ---------- resolve .skr name ----------
@@ -188,11 +196,11 @@ export default function Home() {
     setStatus(json);
 
     if (json?.missedDays > 0) {
-      await loadRescueQuote();
+      await loadQuote();
     } else {
-      setRescueQuote(null);
+      setQuote(null);
     }
-  }, [walletStr, loadRescueQuote]);
+  }, [walletStr, loadQuote]);
 
   // ---------- verify ----------
   const verifyWallet = useCallback(async () => {
@@ -231,13 +239,13 @@ export default function Home() {
       setSessionVerified(true);
       setMsg("Wallet verified");
       await loadStatus();
-      await loadRescueQuote();
+      await loadQuote();
     } catch {
       setMsg("Verification error.");
     } finally {
       setVerifying(false);
     }
-  }, [connected, walletStr, signMessage, loadStatus, loadRescueQuote]);
+  }, [connected, walletStr, signMessage, loadStatus, loadQuote]);
 
   // ---------- check in ----------
   const checkIn = useCallback(async () => {
@@ -257,8 +265,8 @@ export default function Home() {
     const json = await res.json().catch(() => ({}));
 
     if (res.status === 409 && json?.error === "rescue_required") {
-      setMsg("");
-      await loadRescueQuote();
+      // protection required
+      await loadQuote();
       return;
     }
 
@@ -268,9 +276,9 @@ export default function Home() {
     }
 
     setMsg(`Checked in • Streak ${json.streak}`);
-    setRescueQuote(null);
+    setQuote(null);
     await loadStatus();
-  }, [walletStr, loadStatus, loadRescueQuote]);
+  }, [walletStr, loadStatus, loadQuote]);
 
   // ---------- reset streak (free) ----------
   const resetStreak = useCallback(async () => {
@@ -290,32 +298,29 @@ export default function Home() {
       });
 
       const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || "Failed to reset streak");
 
-      if (!res.ok) {
-        throw new Error(json?.error || "Failed to reset streak");
-      }
-
-      setMsg("Streak reset — rescues refreshed. Keep checking in daily.");
-      setRescueQuote(null);
+      setMsg("Streak reset — protections refreshed. Keep checking in daily.");
+      setQuote(null);
       await loadStatus();
-      await loadRescueQuote();
+      await loadQuote();
     } catch (e: any) {
-      console.error(e);
       setMsg(e?.message || "Failed to reset streak");
     } finally {
       setResetting(false);
     }
-  }, [walletStr, loadStatus, loadRescueQuote]);
+  }, [walletStr, loadStatus, loadQuote]);
 
-  // ---------- pay rescue (VersionedTransaction v0 for Seeker) ----------
-  const payRescue = useCallback(async () => {
+  // ---------- pay protection (still rescue_paid on backend) ----------
+  const payProtection = useCallback(async () => {
     if (!publicKey || !walletStr) {
       setMsg("Wallet not ready.");
       return;
     }
 
-    if (!rescueQuote?.canRescue) {
-      setMsg("Rescue not available.");
+    const canProtect = !!(quote?.canProtect ?? quote?.canRescue);
+    if (!canProtect) {
+      setMsg("Protection not available.");
       return;
     }
 
@@ -329,15 +334,16 @@ export default function Home() {
       setPaying(true);
       setMsg("");
 
-      const mint = new PublicKey(rescueQuote.mint);
-      const treasuryOwner = new PublicKey(rescueQuote.treasury);
-      const decimals = rescueQuote.decimals ?? 6;
+      const mint = new PublicKey(quote!.mint);
+      const treasuryOwner = new PublicKey(quote!.treasury);
+      const decimals = quote!.decimals ?? 6;
+
+      const cost = Number(quote!.protectionCostSKR ?? quote!.costSKR ?? 0);
 
       const fromAta = getAssociatedTokenAddressSync(mint, publicKey);
       const toAta = getAssociatedTokenAddressSync(mint, treasuryOwner);
 
-      const rawAmount =
-        BigInt(rescueQuote.costSKR) * BigInt(10) ** BigInt(decimals);
+      const rawAmount = BigInt(cost) * BigInt(10) ** BigInt(decimals);
 
       const ixs = [
         createAssociatedTokenAccountIdempotentInstruction(
@@ -359,7 +365,7 @@ export default function Home() {
       const { conn: rpcConn, blockhash, lastValidBlockHeight, rpc } =
         await getWorkingConnectionForBlockhash();
 
-      console.info(`[payRescue] using rpc=${rpc} (v0 tx)`);
+      console.info(`[payProtection] using rpc=${rpc} (v0 tx)`);
 
       const msgV0 = new TransactionMessage({
         payerKey: publicKey,
@@ -368,7 +374,6 @@ export default function Home() {
       }).compileToV0Message();
 
       const vtx = new VersionedTransaction(msgV0);
-
       const signed: VersionedTransaction = await adapter.signTransaction(vtx);
 
       const sig = await rpcConn.sendRawTransaction(signed.serialize(), {
@@ -389,37 +394,36 @@ export default function Home() {
         body: JSON.stringify({
           wallet: walletStr,
           action: "rescue_paid",
-          rescueDays: rescueQuote.missedDays,
+          rescueDays: quote!.missedDays,
           txSig: sig,
         }),
       });
 
       const commitJson = await commitRes.json().catch(() => ({}));
+      if (!commitRes.ok) throw new Error(commitJson.error || "Commit failed");
 
-      if (!commitRes.ok) {
-        throw new Error(commitJson.error || "Commit failed");
-      }
-
-      setMsg(`Rescued ${commitJson.rescuedDays} day(s) ✓`);
+      setMsg(`Protected ${commitJson.protectedDays ?? commitJson.rescuedDays} day(s) ✓`);
       await loadStatus();
-      await loadRescueQuote();
+      await loadQuote();
     } catch (e: any) {
-      console.error(e);
       setMsg(e?.message || "Payment failed");
     } finally {
       setPaying(false);
     }
-  }, [publicKey, walletStr, rescueQuote, wallet, loadStatus, loadRescueQuote]);
+  }, [publicKey, walletStr, quote, wallet, loadStatus, loadQuote]);
 
   if (!mounted) return null;
 
   const connectedLabel = (skrName && skrName.trim()) || shortWallet(walletStr);
 
-  const showRescueCard =
-    !!rescueQuote &&
-    rescueQuote.ok &&
-    rescueQuote.canRescue &&
-    rescueQuote.missedDays > 0;
+  const showProtectionCard =
+    !!quote &&
+    quote.ok &&
+    !!(quote.canProtect ?? quote.canRescue) &&
+    quote.missedDays > 0;
+
+  const protectionsLeft =
+    Number(status?.protectionsLeft ?? status?.remainingRescue ?? 0);
 
   return (
     <main
@@ -453,18 +457,6 @@ export default function Home() {
             <div style={{ marginTop: 12, fontSize: 14, opacity: 0.85 }}>
               Connected:{" "}
               <span style={{ fontWeight: 800 }}>{connectedLabel}</span>
-              {skrName && skrName.toLowerCase().endsWith(".skr") && (
-                <span
-                  style={{
-                    marginLeft: 8,
-                    color: "#22d3ee",
-                    fontWeight: 900,
-                    textShadow: "0 0 10px rgba(34,211,238,0.35)",
-                  }}
-                >
-                  •
-                </span>
-              )}
             </div>
           )}
 
@@ -482,6 +474,7 @@ export default function Home() {
                 color: "#020617",
                 fontWeight: 700,
                 cursor: "pointer",
+                opacity: verifying ? 0.7 : 1,
               }}
             >
               {verifying ? "Verifying…" : "Verify wallet"}
@@ -509,11 +502,11 @@ export default function Home() {
               🔥 Streak: <strong>{status.streak}</strong>
             </div>
             <div>⏳ Missed days: {status.missedDays}</div>
-            <div>🛡️ Rescues left: {status.remainingRescue}</div>
+            <div>🛡️ Protections left: {protectionsLeft}</div>
           </div>
         )}
 
-        {showRescueCard && (
+        {showProtectionCard && (
           <div
             style={{
               background: "#020617",
@@ -524,17 +517,17 @@ export default function Home() {
             }}
           >
             <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>
-              🛟 Rescue your streak
+              🛡️ Protect your streak
             </div>
 
             <div style={{ opacity: 0.85, marginBottom: 12 }}>
-              You missed <strong>{rescueQuote!.missedDays}</strong> day(s). Pay{" "}
-              <strong>{rescueQuote!.costSKR} SKR</strong> to keep your streak.
+              You missed <strong>{quote!.missedDays}</strong> day(s). Pay{" "}
+              <strong>{quote!.protectionCostSKR ?? quote!.costSKR} SKR</strong>{" "}
+              to protect your current streak.
             </div>
 
-            {/* Primary: Pay */}
             <button
-              onClick={payRescue}
+              onClick={payProtection}
               disabled={paying || resetting}
               style={{
                 width: "100%",
@@ -545,12 +538,14 @@ export default function Home() {
                 color: "#020617",
                 fontWeight: 900,
                 cursor: paying || resetting ? "not-allowed" : "pointer",
+                opacity: paying || resetting ? 0.7 : 1,
               }}
             >
-              {paying ? "Paying…" : `Pay ${rescueQuote!.costSKR} SKR`}
+              {paying
+                ? "Paying…"
+                : `Pay ${quote!.protectionCostSKR ?? quote!.costSKR} SKR`}
             </button>
 
-            {/* Secondary: Reset */}
             <button
               onClick={resetStreak}
               disabled={resetting || paying}
@@ -564,42 +559,38 @@ export default function Home() {
                 color: "#e5e7eb",
                 fontWeight: 900,
                 cursor: resetting || paying ? "not-allowed" : "pointer",
+                opacity: resetting || paying ? 0.7 : 1,
               }}
             >
               {resetting ? "Resetting…" : "Reset streak (free)"}
             </button>
 
             <div style={{ marginTop: 10, opacity: 0.75, fontSize: 12, lineHeight: 1.4 }}>
-              Resets your streak to <strong>1</strong> but <strong>refreshes rescues</strong>.
-              You still keep your points.
-            </div>
-
-            <div style={{ marginTop: 10, opacity: 0.7, fontSize: 12 }}>
-              Creates token accounts if needed, transfers SKR, then verifies on-chain.
+              Resets your streak to <strong>1</strong> but{" "}
+              <strong>refreshes protections</strong>. You still keep your points.
             </div>
           </div>
         )}
 
         <button
           onClick={checkIn}
-          disabled={!sessionVerified || showRescueCard}
+          disabled={!sessionVerified || showProtectionCard}
           style={{
             width: "100%",
             padding: "14px",
             borderRadius: 12,
             background:
-              !sessionVerified || showRescueCard
+              !sessionVerified || showProtectionCard
                 ? "#1f2933"
                 : "linear-gradient(90deg,#22d3ee,#7c3aed)",
             border: "none",
-            color: !sessionVerified || showRescueCard ? "#6b7280" : "#020617",
+            color: !sessionVerified || showProtectionCard ? "#6b7280" : "#020617",
             fontWeight: 800,
-            cursor:
-              !sessionVerified || showRescueCard ? "not-allowed" : "pointer",
+            cursor: !sessionVerified || showProtectionCard ? "not-allowed" : "pointer",
             marginBottom: 12,
           }}
         >
-          {showRescueCard ? "Rescue required" : "Check in"}
+          {showProtectionCard ? "Protection required" : "Check in"}
         </button>
 
         {msg && (

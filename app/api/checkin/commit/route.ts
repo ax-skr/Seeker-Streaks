@@ -16,9 +16,7 @@ const TREASURY_WALLET = new PublicKey(
 
 function todayUTCISO(): string {
   const now = new Date();
-  const d = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
-  );
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   return d.toISOString().slice(0, 10);
 }
 
@@ -36,10 +34,7 @@ function getRpc(): string {
   );
 }
 
-async function getMintDecimals(
-  connection: Connection,
-  mint: PublicKey
-): Promise<number> {
+async function getMintDecimals(connection: Connection, mint: PublicKey): Promise<number> {
   const info = await connection.getParsedAccountInfo(mint, "confirmed");
   const v: any = info?.value;
   const decimals = v?.data?.parsed?.info?.decimals;
@@ -88,23 +83,34 @@ function minuteBucketUTC(): string {
 async function rateLimit(wallet: string, route: string) {
   const bucket = minuteBucketUTC();
 
-  const { error } = await supabaseAdmin
-    .from("rate_limits")
-    .insert({ wallet, route, bucket });
+  const { error } = await supabaseAdmin.from("rate_limits").insert({ wallet, route, bucket });
 
-  // If insert fails due to PK conflict => already called this minute
   if (error) {
     const code = (error as any).code;
-    // Postgres unique violation is usually 23505
-    if (code === "23505") {
-      return { ok: false, bucket };
-    }
-    // Any other error means table missing / schema issue
+    if (code === "23505") return { ok: false, bucket };
     console.error("RATE LIMIT ERROR:", error);
-    return { ok: true, bucket }; // fail-open so you don't brick prod
+    return { ok: true, bucket }; // fail-open
   }
 
   return { ok: true, bucket };
+}
+
+// helper: attach protection keys to any payload
+function withProtectionAliases<T extends Record<string, any>>(payload: T) {
+  const missedDays = payload.missedDays;
+  const remainingRescue = payload.remainingRescue;
+  const canRescue = payload.canRescue;
+  const costSKR = payload.costSKR;
+
+  return {
+    ...payload,
+    // NEW aliases
+    canProtect: typeof canRescue === "boolean" ? canRescue : undefined,
+    protectionRequired: typeof canRescue === "boolean" ? canRescue : undefined,
+    protectionCostSKR: typeof costSKR === "number" ? costSKR : undefined,
+    protectionsLeft: typeof remainingRescue === "number" ? remainingRescue : undefined,
+    missedDays, // keep
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -116,44 +122,27 @@ export async function POST(req: NextRequest) {
     const txSig = String(body?.txSig ?? "").trim();
 
     if (!wallet || !action) {
-      return NextResponse.json(
-        { error: "wallet and action required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "wallet and action required" }, { status: 400 });
     }
 
-    // ✅ Rate limit: 1 commit/min per wallet (adjust if you want)
     const rl = await rateLimit(wallet, "/api/checkin/commit");
     if (!rl.ok) {
-      return NextResponse.json(
-        { error: "Too many requests. Try again in a moment." },
-        { status: 429 }
-      );
+      return NextResponse.json({ error: "Too many requests. Try again in a moment." }, { status: 429 });
     }
 
-    // ✅ Guard: rescueDays must never exceed MAX_RESCUE_DAYS
     if (action === "rescue_paid" && rescueDays > MAX_RESCUE_DAYS) {
-      return NextResponse.json(
-        { error: "rescueDays exceeds MAX_RESCUE_DAYS" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "rescueDays exceeds MAX_RESCUE_DAYS" }, { status: 400 });
     }
 
-    // 1) Load user (or create)
     const { data: user, error: userErr } = await supabaseAdmin
       .from("users")
-      .select(
-        "wallet, points, streak, last_checkin_date, rescued_days_used_run, verified_at"
-      )
+      .select("wallet, points, streak, last_checkin_date, rescued_days_used_run, verified_at")
       .eq("wallet", wallet)
       .maybeSingle();
 
     if (userErr) {
       console.error("USER SELECT ERROR:", userErr);
-      return NextResponse.json(
-        { error: "Failed to load user" },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "Failed to load user" }, { status: 500 });
     }
 
     let u = user ?? null;
@@ -169,17 +158,12 @@ export async function POST(req: NextRequest) {
           rescued_days_used_run: 0,
           verified_at: null,
         })
-        .select(
-          "wallet, points, streak, last_checkin_date, rescued_days_used_run, verified_at"
-        )
+        .select("wallet, points, streak, last_checkin_date, rescued_days_used_run, verified_at")
         .single();
 
       if (insErr || !inserted) {
         console.error("USER INSERT ERROR:", insErr);
-        return NextResponse.json(
-          { error: "Failed to create user" },
-          { status: 500 }
-        );
+        return NextResponse.json({ error: "Failed to create user" }, { status: 500 });
       }
 
       u = inserted;
@@ -202,10 +186,7 @@ export async function POST(req: NextRequest) {
     // -------- CHECKIN --------
     if (action === "checkin") {
       if (u.last_checkin_date === today) {
-        return NextResponse.json(
-          { error: "Already checked in today" },
-          { status: 409 }
-        );
+        return NextResponse.json({ error: "Already checked in today" }, { status: 409 });
       }
 
       if (u.last_checkin_date) {
@@ -223,19 +204,22 @@ export async function POST(req: NextRequest) {
 
           if (canRescue) {
             return NextResponse.json(
-              {
+              withProtectionAliases({
                 error: "rescue_required",
+                // NEW alias if your UI ever wants it:
+                protection_required: true,
                 missedDays,
                 remainingRescue,
                 costSKR: missedDays * SKR_PER_DAY,
                 treasury: TREASURY_WALLET.toBase58(),
                 mint: SKR_MINT.toBase58(),
-              },
+                canRescue,
+              }),
               { status: 409 }
             );
           }
 
-          // Missed too many days to rescue → reset streak but keep points
+          // Missed too many days -> reset streak (points kept)
           await supabaseAdmin
             .from("users")
             .update({
@@ -250,7 +234,7 @@ export async function POST(req: NextRequest) {
             action: "checkin",
             streak: 1,
             points: u.points ?? 0,
-            note: "Too many missed days to rescue. Streak reset — keep checking in daily.",
+            note: "Too many missed days to protect. Streak reset — keep checking in daily.",
           });
         }
       }
@@ -274,23 +258,14 @@ export async function POST(req: NextRequest) {
 
       if (upErr) {
         console.error("CHECKIN UPDATE ERROR:", upErr);
-        return NextResponse.json(
-          { error: "Failed to check in" },
-          { status: 500 }
-        );
+        return NextResponse.json({ error: "Failed to check in" }, { status: 500 });
       }
 
-      return NextResponse.json({
-        ok: true,
-        action: "checkin",
-        streak: newStreak,
-        points: newPoints,
-      });
+      return NextResponse.json({ ok: true, action: "checkin", streak: newStreak, points: newPoints });
     }
 
     // -------- RESET STREAK (FREE) --------
     if (action === "reset_streak") {
-      // idempotent if already applied today
       if (u.last_checkin_date === today) {
         return NextResponse.json({
           ok: true,
@@ -309,17 +284,13 @@ export async function POST(req: NextRequest) {
           streak: 1,
           last_checkin_date: today,
           points: newPoints,
-          // ✅ reset rescues back to 4 by setting used_run back to 0
           rescued_days_used_run: 0,
         })
         .eq("wallet", wallet);
 
       if (resetErr) {
         console.error("RESET STREAK ERROR:", resetErr);
-        return NextResponse.json(
-          { error: "Failed to reset streak" },
-          { status: 500 }
-        );
+        return NextResponse.json({ error: "Failed to reset streak" }, { status: 500 });
       }
 
       return NextResponse.json({
@@ -328,17 +299,16 @@ export async function POST(req: NextRequest) {
         streak: 1,
         points: newPoints,
         remainingRescue: MAX_RESCUE_DAYS,
-        note: "Streak reset. Points kept. Rescues refreshed. Check in daily.",
+        protectionsLeft: MAX_RESCUE_DAYS,
+        note: "Streak reset. Points kept. Protections refreshed. Check in daily.",
       });
     }
 
     // -------- RESCUE (PAID) --------
+    // DB/action stays rescue_paid, UI calls it “protection”
     if (action === "rescue_paid") {
       if (!Number.isFinite(rescueDays) || rescueDays <= 0) {
-        return NextResponse.json(
-          { error: "rescueDays required (>0)" },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: "rescueDays required (>0)" }, { status: 400 });
       }
 
       if (!txSig) {
@@ -350,22 +320,14 @@ export async function POST(req: NextRequest) {
       const remainingRescue = MAX_RESCUE_DAYS - used;
 
       const stillAllowed =
-        missedDays > 0 &&
-        missedDays <= remainingRescue &&
-        missedDays <= MAX_RESCUE_DAYS;
+        missedDays > 0 && missedDays <= remainingRescue && missedDays <= MAX_RESCUE_DAYS;
 
       if (!stillAllowed) {
-        return NextResponse.json(
-          { error: "Rescue is not allowed right now." },
-          { status: 409 }
-        );
+        return NextResponse.json({ error: "Protection is not allowed right now." }, { status: 409 });
       }
 
       if (rescueDays !== missedDays) {
-        return NextResponse.json(
-          { error: "rescueDays mismatch" },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: "rescueDays mismatch" }, { status: 400 });
       }
 
       const conn = new Connection(getRpc(), "confirmed");
@@ -377,11 +339,7 @@ export async function POST(req: NextRequest) {
         BigInt(10) ** BigInt(decimals)
       ).toString();
 
-      const treasuryAta = await getAssociatedTokenAddress(
-        SKR_MINT,
-        TREASURY_WALLET,
-        false
-      );
+      const treasuryAta = await getAssociatedTokenAddress(SKR_MINT, TREASURY_WALLET, false);
 
       const tx = await conn.getParsedTransaction(txSig, {
         commitment: "confirmed",
@@ -389,26 +347,17 @@ export async function POST(req: NextRequest) {
       });
 
       if (!tx) {
-        return NextResponse.json(
-          { error: "Transaction not confirmed yet." },
-          { status: 409 }
-        );
+        return NextResponse.json({ error: "Transaction not confirmed yet." }, { status: 409 });
       }
-
       if (tx.meta?.err) {
-        return NextResponse.json(
-          { error: "Transaction failed on-chain." },
-          { status: 409 }
-        );
+        return NextResponse.json({ error: "Transaction failed on-chain." }, { status: 409 });
       }
 
       const mintStr = SKR_MINT.toBase58();
       const treasuryAtaStr = treasuryAta.toBase58();
 
       const top = tx.transaction.message.instructions ?? [];
-      const inner = (tx.meta?.innerInstructions ?? []).flatMap(
-        (x: any) => x.instructions ?? []
-      );
+      const inner = (tx.meta?.innerInstructions ?? []).flatMap((x: any) => x.instructions ?? []);
       const allInstructions = [...top, ...inner];
 
       const okPay = allInstructions.some((ix: any) =>
@@ -421,13 +370,9 @@ export async function POST(req: NextRequest) {
       );
 
       if (!okPay) {
-        return NextResponse.json(
-          { error: "Payment verification failed." },
-          { status: 403 }
-        );
+        return NextResponse.json({ error: "Payment verification failed." }, { status: 403 });
       }
 
-      // idempotent DB write + idempotent apply
       const paymentPayload = {
         sig: txSig,
         wallet,
@@ -444,7 +389,6 @@ export async function POST(req: NextRequest) {
 
       if (upsertErr) {
         console.error("SKR PAYMENTS UPSERT ERROR:", upsertErr);
-
         return NextResponse.json(
           {
             error: "Failed to record payment.",
@@ -459,7 +403,6 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Re-fetch user fresh
       const { data: freshUser, error: fuErr } = await supabaseAdmin
         .from("users")
         .select("wallet, rescued_days_used_run, last_checkin_date")
@@ -467,20 +410,18 @@ export async function POST(req: NextRequest) {
         .maybeSingle();
 
       if (fuErr || !freshUser) {
-        return NextResponse.json(
-          { error: "Failed to refresh user" },
-          { status: 500 }
-        );
+        return NextResponse.json({ error: "Failed to refresh user" }, { status: 500 });
       }
 
-      // If already applied today, return OK
       if (freshUser.last_checkin_date === today) {
         const usedNow = freshUser.rescued_days_used_run ?? 0;
         return NextResponse.json({
           ok: true,
           action: "rescue_paid",
           rescuedDays: rescueDays,
+          protectedDays: rescueDays,
           remainingRescue: Math.max(0, MAX_RESCUE_DAYS - usedNow),
+          protectionsLeft: Math.max(0, MAX_RESCUE_DAYS - usedNow),
           note: "Already applied.",
         });
       }
@@ -497,17 +438,18 @@ export async function POST(req: NextRequest) {
 
       if (applyErr) {
         console.error("RESCUE APPLY ERROR:", applyErr);
-        return NextResponse.json(
-          { error: "Failed to apply rescue" },
-          { status: 500 }
-        );
+        return NextResponse.json({ error: "Failed to apply protection" }, { status: 500 });
       }
+
+      const left = Math.max(0, MAX_RESCUE_DAYS - (usedNow + rescueDays));
 
       return NextResponse.json({
         ok: true,
         action: "rescue_paid",
         rescuedDays: rescueDays,
-        remainingRescue: Math.max(0, MAX_RESCUE_DAYS - (usedNow + rescueDays)),
+        protectedDays: rescueDays,
+        remainingRescue: left,
+        protectionsLeft: left,
       });
     }
 

@@ -25,12 +25,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Wallet required" }, { status: 400 });
     }
 
-    // Load user
     const { data: user, error } = await supabaseAdmin
       .from("users")
-      .select(
-        "wallet, streak, last_checkin_date, rescued_days_used_run, verified_at"
-      )
+      .select("wallet, streak, last_checkin_date, rescued_days_used_run, verified_at")
       .eq("wallet", wallet)
       .maybeSingle();
 
@@ -46,7 +43,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Not verified yet
     if (!user.verified_at) {
       return NextResponse.json({
         ok: true,
@@ -57,11 +53,7 @@ export async function POST(req: NextRequest) {
     // Compute missed days (UTC-safe)
     const today = new Date();
     const todayUTC = new Date(
-      Date.UTC(
-        today.getUTCFullYear(),
-        today.getUTCMonth(),
-        today.getUTCDate()
-      )
+      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
     );
 
     let missedDays = 0;
@@ -71,32 +63,37 @@ export async function POST(req: NextRequest) {
       missedDays = Math.max(0, Math.floor(diffMs / 86400000) - 1);
     }
 
-    const remainingRescue =
-      MAX_RESCUE_DAYS - (user.rescued_days_used_run ?? 0);
+    const remainingRescue = MAX_RESCUE_DAYS - (user.rescued_days_used_run ?? 0);
 
     const canRescue =
-      missedDays > 0 &&
-      missedDays <= remainingRescue &&
-      missedDays <= MAX_RESCUE_DAYS;
+      missedDays > 0 && missedDays <= remainingRescue && missedDays <= MAX_RESCUE_DAYS;
 
     const costSKR = canRescue ? missedDays * SKR_PER_DAY : 0;
 
+    // ✅ Translation layer: return BOTH old + new keys
     return NextResponse.json({
       ok: true,
       verified: true,
+
+      // core
       missedDays,
+      streak: user.streak ?? 0,
+
+      // OLD keys (keep for compatibility)
       canRescue,
       costSKR,
-      streak: user.streak ?? 0,
       remainingRescue,
+
+      // NEW keys (preferred UI wording)
+      canProtect: canRescue,
+      protectionRequired: canRescue,
+      protectionCostSKR: costSKR,
+      protectionsLeft: remainingRescue,
     });
   } catch (e: any) {
     console.error("Status route crash:", e);
     return NextResponse.json(
-      {
-        error: "Internal server error",
-        details: e?.message ?? String(e),
-      },
+      { error: "Internal server error", details: e?.message ?? String(e) },
       { status: 500 }
     );
   }
