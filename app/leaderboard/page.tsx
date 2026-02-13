@@ -323,12 +323,18 @@ export default function LeaderboardPage() {
 
                     <div style={styles.colName}>
                       <div style={styles.userLine}>
-                        <span style={styles.userName} title={display}>
+                        <span
+                          className="lbUserName"
+                          style={styles.userName}
+                          title={display}
+                        >
                           {display}
                           {showSkr && <span style={styles.skrGlow}> •</span>}
                         </span>
                       </div>
-                      <div style={styles.walletLine}>{shortWallet(r.wallet)}</div>
+                      <div className="lbWalletLine" style={styles.walletLine}>
+                        {shortWallet(r.wallet)}
+                      </div>
                     </div>
 
                     <div style={styles.colPoints}>
@@ -395,6 +401,7 @@ export default function LeaderboardPage() {
                   borderTop: "none",
                   background: "rgba(0,0,0,0.12)",
                 }}
+                className="lbRow"
               >
                 <div style={styles.colRank}>
                   <span style={styles.rankPill}>
@@ -405,16 +412,25 @@ export default function LeaderboardPage() {
                 <div style={styles.colName}>
                   <div style={styles.userLine}>
                     <span
+                      className="lbUserName"
                       style={styles.userName}
-                      title={(myRow.name && myRow.name.trim()) || shortWallet(myRow.wallet)}
+                      title={
+                        (myRow.name && myRow.name.trim()) ||
+                        shortWallet(myRow.wallet)
+                      }
                     >
-                      {(myRow.name && myRow.name.trim()) || shortWallet(myRow.wallet)}
+                      {(myRow.name && myRow.name.trim()) ||
+                        shortWallet(myRow.wallet)}
                       {((myRow.name && myRow.name.trim()) || "")
                         .toLowerCase()
-                        .endsWith(".skr") && <span style={styles.skrGlow}> •</span>}
+                        .endsWith(".skr") && (
+                        <span style={styles.skrGlow}> •</span>
+                      )}
                     </span>
                   </div>
-                  <div style={styles.walletLine}>{shortWallet(myRow.wallet)}</div>
+                  <div className="lbWalletLine" style={styles.walletLine}>
+                    {shortWallet(myRow.wallet)}
+                  </div>
                 </div>
 
                 <div style={styles.colPoints}>
@@ -445,12 +461,20 @@ export default function LeaderboardPage() {
           min-width: 0;
         }
 
+        /* ✅ Mobile: show more of long .skr names without breaking alignment */
         @media (max-width: 520px) {
           .lbHead, .lbRow {
-            grid-template-columns: 58px 1fr 86px 86px !important;
+            grid-template-columns: 58px 1fr 74px 74px !important; /* more room for USER */
           }
           .lbWrap {
             overflow-x: hidden !important;
+          }
+          .lbRow .lbUserName {
+            font-size: 13px !important;
+            letter-spacing: 0.1px !important;
+          }
+          .lbRow .lbWalletLine {
+            font-size: 11px !important;
           }
         }
       `}</style>
