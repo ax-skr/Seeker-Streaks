@@ -21,6 +21,12 @@ export default function PrivacyPage() {
           Basic usage data may be collected to improve performance and user
           experience.
         </p>
+        
+        <h2 className="text-2xl font-semibold">Third-Party Services</h2>
+        <p> 
+          Seeker Streaks may use third-party services such as hosting providers and analytics tools necessary for operation.
+
+        </p>
 
         <h2 className="text-2xl font-semibold">Data Storage</h2>
         <p>
