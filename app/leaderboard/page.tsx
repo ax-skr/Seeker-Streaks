@@ -189,9 +189,7 @@ export default function LeaderboardPage() {
         name: null,
       }));
 
-      const mine = normalized.find(
-        (r) => r.wallet && r.wallet === myWallet
-      );
+      const mine = normalized.find((r) => r.wallet && r.wallet === myWallet);
 
       if (!mine) {
         setMyRow({
@@ -237,7 +235,6 @@ export default function LeaderboardPage() {
           <div>
             <div style={styles.title}>Leaderboard</div>
 
-            {/* ✅ Add this line */}
             <div
               style={{
                 marginTop: 6,
@@ -310,8 +307,7 @@ export default function LeaderboardPage() {
             <div style={styles.tableBody}>
               {rows.map((r, idx) => {
                 const display =
-                  (r.name && r.name.trim()) || // prefer .skr
-                  shortWallet(r.wallet);
+                  (r.name && r.name.trim()) || shortWallet(r.wallet);
 
                 const showSkr = display.toLowerCase().endsWith(".skr");
 
@@ -327,7 +323,7 @@ export default function LeaderboardPage() {
 
                     <div style={styles.colName}>
                       <div style={styles.userLine}>
-                        <span style={styles.userName}>
+                        <span style={styles.userName} title={display}>
                           {display}
                           {showSkr && <span style={styles.skrGlow}> •</span>}
                         </span>
@@ -355,7 +351,6 @@ export default function LeaderboardPage() {
           </div>
         )}
 
-        {/* ✅ Show connected user's rank at bottom if not in top 100 */}
         {!loading && !err && connected && myWallet && !myInTop100 && (
           <div
             style={{
@@ -381,7 +376,14 @@ export default function LeaderboardPage() {
             </div>
 
             {myLoading ? (
-              <div style={{ padding: 14, display: "flex", gap: 12, alignItems: "center" }}>
+              <div
+                style={{
+                  padding: 14,
+                  display: "flex",
+                  gap: 12,
+                  alignItems: "center",
+                }}
+              >
                 <div style={styles.spinner} />
                 <div>Loading your rank…</div>
               </div>
@@ -402,7 +404,10 @@ export default function LeaderboardPage() {
 
                 <div style={styles.colName}>
                   <div style={styles.userLine}>
-                    <span style={styles.userName}>
+                    <span
+                      style={styles.userName}
+                      title={(myRow.name && myRow.name.trim()) || shortWallet(myRow.wallet)}
+                    >
                       {(myRow.name && myRow.name.trim()) || shortWallet(myRow.wallet)}
                       {((myRow.name && myRow.name.trim()) || "")
                         .toLowerCase()
@@ -431,11 +436,15 @@ export default function LeaderboardPage() {
         )}
       </div>
 
-      {/* CSS for spinner + mobile smoothing */}
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-        /* Mobile: stop the table feeling “clipped” */
+        /* ✅ Ensure the "User" column can shrink, and long names don't push stats */
+        .lbRow > div:nth-child(2),
+        .lbHead > div:nth-child(2) {
+          min-width: 0;
+        }
+
         @media (max-width: 520px) {
           .lbHead, .lbRow {
             grid-template-columns: 58px 1fr 86px 86px !important;
@@ -586,7 +595,15 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(0,0,0,0.14)",
   },
   colRank: { display: "flex", alignItems: "center" },
-  colName: { display: "flex", flexDirection: "column", justifyContent: "center" },
+
+  // ✅ key: allow this grid cell to shrink
+  colName: {
+    display: "flex",
+    minWidth: 0,
+    flexDirection: "column",
+    justifyContent: "center",
+  },
+
   colPoints: {
     display: "flex",
     flexDirection: "column",
@@ -609,8 +626,20 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(102,102,255,0.10)",
     fontWeight: 900,
   },
-  userLine: { display: "flex", alignItems: "center", gap: 10 },
-  userName: { fontWeight: 900, letterSpacing: 0.2 },
+  userLine: { display: "flex", alignItems: "center", gap: 10, minWidth: 0 },
+
+  // ✅ key: truncate long .skr names so stats never move
+  userName: {
+    fontWeight: 900,
+    letterSpacing: 0.2,
+    display: "block",
+    minWidth: 0,
+    maxWidth: "100%",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+
   skrGlow: {
     color: "rgba(0,255,163,0.95)",
     textShadow: "0 0 12px rgba(0,255,163,0.45)",
