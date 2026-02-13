@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useWallet } from "@solana/wallet-adapter-react";
 
 type Row = {
   wallet: string;
@@ -29,36 +30,49 @@ async function safeJson(res: Response) {
 }
 
 export default function LeaderboardPage() {
+  const { publicKey, connected } = useWallet();
+
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+
+  const [myRow, setMyRow] = useState<Row | null>(null);
+  const [myLoading, setMyLoading] = useState(false);
 
   const baseUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
     return window.location.origin;
   }, []);
 
+  const myWallet = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
+
   // cache to avoid re-resolving names
   const nameCache = useRef<Map<string, string | null>>(new Map());
 
   async function resolveName(wallet: string): Promise<string | null> {
     if (!wallet) return null;
-    if (nameCache.current.has(wallet)) return nameCache.current.get(wallet) ?? null;
+    if (nameCache.current.has(wallet))
+      return nameCache.current.get(wallet) ?? null;
 
     // Try POST first (most common)
     try {
       const res = await fetch(`${baseUrl}/api/resolve-name`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
         body: JSON.stringify({ wallet }),
         cache: "no-store",
       });
 
       const data = await safeJson(res);
       const name =
-        (data?.name ?? data?.skr ?? data?.username ?? data?.displayName ?? null) as
-          | string
-          | null;
+        (data?.name ??
+          data?.skr ??
+          data?.username ??
+          data?.displayName ??
+          null) as string | null;
 
       const cleaned = name && String(name).trim() ? String(name).trim() : null;
       nameCache.current.set(wallet, cleaned);
@@ -66,19 +80,25 @@ export default function LeaderboardPage() {
     } catch {
       // fallback GET if your route uses querystring
       try {
-        const res2 = await fetch(`${baseUrl}/api/resolve-name?wallet=${encodeURIComponent(wallet)}`, {
-          method: "GET",
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-        });
+        const res2 = await fetch(
+          `${baseUrl}/api/resolve-name?wallet=${encodeURIComponent(wallet)}`,
+          {
+            method: "GET",
+            headers: { Accept: "application/json" },
+            cache: "no-store",
+          }
+        );
 
         const data2 = await safeJson(res2);
         const name2 =
-          (data2?.name ?? data2?.skr ?? data2?.username ?? data2?.displayName ?? null) as
-            | string
-            | null;
+          (data2?.name ??
+            data2?.skr ??
+            data2?.username ??
+            data2?.displayName ??
+            null) as string | null;
 
-        const cleaned2 = name2 && String(name2).trim() ? String(name2).trim() : null;
+        const cleaned2 =
+          name2 && String(name2).trim() ? String(name2).trim() : null;
         nameCache.current.set(wallet, cleaned2);
         return cleaned2;
       } catch {
@@ -102,7 +122,12 @@ export default function LeaderboardPage() {
       const data = await safeJson(res);
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
 
-      const raw: any[] = Array.isArray(data?.rows) ? data.rows : Array.isArray(data) ? data : [];
+      const raw: any[] = Array.isArray(data?.rows)
+        ? data.rows
+        : Array.isArray(data)
+        ? data
+        : [];
+
       const normalized: Row[] = raw.map((r: any, i: number) => ({
         wallet: String(r.wallet ?? ""),
         points: Number(r.points ?? 0),
@@ -111,11 +136,13 @@ export default function LeaderboardPage() {
         name: null,
       }));
 
-      setRows(normalized);
+      // ✅ Only show top 100
+      const top100 = normalized.slice(0, 100);
+      setRows(top100);
 
-      // Resolve .skr names (non-blocking)
+      // Resolve .skr names (non-blocking) for top 100 only
       const resolved = await Promise.all(
-        normalized.map(async (r) => {
+        top100.map(async (r) => {
           const n = await resolveName(r.wallet);
           return { ...r, name: n };
         })
@@ -130,10 +157,78 @@ export default function LeaderboardPage() {
     }
   }
 
+  async function loadMyRank() {
+    if (!myWallet) {
+      setMyRow(null);
+      return;
+    }
+
+    setMyLoading(true);
+    try {
+      // Try to find my row from the same leaderboard payload (no new API required)
+      const res = await fetch(`${baseUrl}/api/leaderboard`, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+
+      const data = await safeJson(res);
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+
+      const raw: any[] = Array.isArray(data?.rows)
+        ? data.rows
+        : Array.isArray(data)
+        ? data
+        : [];
+
+      const normalized: Row[] = raw.map((r: any, i: number) => ({
+        wallet: String(r.wallet ?? ""),
+        points: Number(r.points ?? 0),
+        streak: Number(r.streak ?? 0),
+        rank: Number(r.rank ?? i + 1),
+        name: null,
+      }));
+
+      const mine = normalized.find(
+        (r) => r.wallet && r.wallet === myWallet
+      );
+
+      if (!mine) {
+        setMyRow({
+          wallet: myWallet,
+          points: 0,
+          streak: 0,
+          rank: undefined,
+          name: null,
+        });
+        return;
+      }
+
+      const n = await resolveName(mine.wallet);
+      setMyRow({ ...mine, name: n });
+    } catch {
+      // If this fails, we just don't show the bottom card.
+      setMyRow(null);
+    } finally {
+      setMyLoading(false);
+    }
+  }
+
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseUrl]);
+
+  useEffect(() => {
+    // load user's row when they connect / change wallet
+    loadMyRank();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myWallet, baseUrl]);
+
+  const myInTop100 = useMemo(() => {
+    if (!myWallet) return false;
+    return rows.some((r) => r.wallet === myWallet);
+  }, [rows, myWallet]);
 
   return (
     <div style={styles.shell}>
@@ -141,13 +236,35 @@ export default function LeaderboardPage() {
         <div style={styles.headerRow}>
           <div>
             <div style={styles.title}>Leaderboard</div>
+
+            {/* ✅ Add this line */}
+            <div
+              style={{
+                marginTop: 6,
+                fontSize: 12,
+                fontWeight: 900,
+                letterSpacing: 0.8,
+                opacity: 0.9,
+                textTransform: "uppercase",
+              }}
+            >
+              Phase 1 — Founders Era
+            </div>
+
             <div style={styles.sub}>
-              Ranked by <span style={styles.badge}>longest streak</span>, then total points
+              Ranked by <span style={styles.badge}>longest streak</span>, then
+              total points
             </div>
           </div>
 
           <div style={styles.actions}>
-            <button onClick={load} style={styles.btnSecondary}>
+            <button
+              onClick={() => {
+                load();
+                loadMyRank();
+              }}
+              style={styles.btnSecondary}
+            >
               Refresh
             </button>
             <Link href="/" style={styles.btnPrimary as any}>
@@ -176,7 +293,9 @@ export default function LeaderboardPage() {
         )}
 
         {!loading && !err && rows.length === 0 && (
-          <div style={styles.emptyBox}>No entries yet. Verify + check in, then refresh.</div>
+          <div style={styles.emptyBox}>
+            No entries yet. Verify + check in, then refresh.
+          </div>
         )}
 
         {!loading && !err && rows.length > 0 && (
@@ -197,7 +316,11 @@ export default function LeaderboardPage() {
                 const showSkr = display.toLowerCase().endsWith(".skr");
 
                 return (
-                  <div key={`${r.wallet}-${idx}`} style={styles.row} className="lbRow">
+                  <div
+                    key={`${r.wallet}-${idx}`}
+                    style={styles.row}
+                    className="lbRow"
+                  >
                     <div style={styles.colRank}>
                       <span style={styles.rankPill}>{r.rank ?? idx + 1}</span>
                     </div>
@@ -226,7 +349,84 @@ export default function LeaderboardPage() {
               })}
             </div>
 
-            <div style={styles.footerNote}>Only verified and locked in 👀 users show here.</div>
+            <div style={styles.footerNote}>
+              Only verified and locked in 👀 users show here.
+            </div>
+          </div>
+        )}
+
+        {/* ✅ Show connected user's rank at bottom if not in top 100 */}
+        {!loading && !err && connected && myWallet && !myInTop100 && (
+          <div
+            style={{
+              marginTop: 14,
+              borderRadius: 16,
+              border: "1px solid rgba(255,255,255,0.10)",
+              background: "rgba(255,255,255,0.04)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                padding: "12px 12px",
+                borderBottom: "1px solid rgba(255,255,255,0.06)",
+                fontWeight: 900,
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: 0.8,
+                opacity: 0.9,
+              }}
+            >
+              Your position
+            </div>
+
+            {myLoading ? (
+              <div style={{ padding: 14, display: "flex", gap: 12, alignItems: "center" }}>
+                <div style={styles.spinner} />
+                <div>Loading your rank…</div>
+              </div>
+            ) : myRow ? (
+              <div
+                style={{
+                  ...styles.row,
+                  gridTemplateColumns: "70px 1fr 110px 110px",
+                  borderTop: "none",
+                  background: "rgba(0,0,0,0.12)",
+                }}
+              >
+                <div style={styles.colRank}>
+                  <span style={styles.rankPill}>
+                    {myRow.rank ? myRow.rank : "—"}
+                  </span>
+                </div>
+
+                <div style={styles.colName}>
+                  <div style={styles.userLine}>
+                    <span style={styles.userName}>
+                      {(myRow.name && myRow.name.trim()) || shortWallet(myRow.wallet)}
+                      {((myRow.name && myRow.name.trim()) || "")
+                        .toLowerCase()
+                        .endsWith(".skr") && <span style={styles.skrGlow}> •</span>}
+                    </span>
+                  </div>
+                  <div style={styles.walletLine}>{shortWallet(myRow.wallet)}</div>
+                </div>
+
+                <div style={styles.colPoints}>
+                  <div style={styles.statNum}>{Number(myRow.points ?? 0)}</div>
+                  <div style={styles.statLabel}>Points</div>
+                </div>
+
+                <div style={styles.colStreak}>
+                  <div style={styles.statNum}>{Number(myRow.streak ?? 0)}</div>
+                  <div style={styles.statLabel}>Streak</div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ padding: 14, opacity: 0.85, fontSize: 13 }}>
+                Couldn’t load your rank right now.
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -311,7 +511,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "10px 14px",
     borderRadius: 12,
     border: "1px solid rgba(0,255,163,0.45)",
-    background: "linear-gradient(90deg, rgba(0,255,163,0.18), rgba(102,102,255,0.12))",
+    background:
+      "linear-gradient(90deg, rgba(0,255,163,0.18), rgba(102,102,255,0.12))",
     color: "#EFFFF9",
     fontWeight: 800,
     textDecoration: "none",
