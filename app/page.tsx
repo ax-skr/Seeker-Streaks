@@ -402,7 +402,9 @@ export default function Home() {
       const commitJson = await commitRes.json().catch(() => ({}));
       if (!commitRes.ok) throw new Error(commitJson.error || "Commit failed");
 
-      setMsg(`Protected ${commitJson.protectedDays ?? commitJson.rescuedDays} day(s) ✓`);
+      setMsg(
+        `Protected ${commitJson.protectedDays ?? commitJson.rescuedDays} day(s) ✓`
+      );
       await loadStatus();
       await loadQuote();
     } catch (e: any) {
@@ -457,6 +459,13 @@ export default function Home() {
             <div style={{ marginTop: 12, fontSize: 14, opacity: 0.85 }}>
               Connected:{" "}
               <span style={{ fontWeight: 800 }}>{connectedLabel}</span>
+
+              {/* ✅ Friendly message when no main .skr is set */}
+              {!skrName && (
+                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.75 }}>
+                  Set your .skr as Main Domain in AllDomains to display your name
+                </div>
+              )}
             </div>
           )}
 
@@ -565,7 +574,14 @@ export default function Home() {
               {resetting ? "Resetting…" : "Reset streak (free)"}
             </button>
 
-            <div style={{ marginTop: 10, opacity: 0.75, fontSize: 12, lineHeight: 1.4 }}>
+            <div
+              style={{
+                marginTop: 10,
+                opacity: 0.75,
+                fontSize: 12,
+                lineHeight: 1.4,
+              }}
+            >
               Resets your streak to <strong>1</strong> but{" "}
               <strong>refreshes protections</strong>. You still keep your points.
             </div>
@@ -584,9 +600,11 @@ export default function Home() {
                 ? "#1f2933"
                 : "linear-gradient(90deg,#22d3ee,#7c3aed)",
             border: "none",
-            color: !sessionVerified || showProtectionCard ? "#6b7280" : "#020617",
+            color:
+              !sessionVerified || showProtectionCard ? "#6b7280" : "#020617",
             fontWeight: 800,
-            cursor: !sessionVerified || showProtectionCard ? "not-allowed" : "pointer",
+            cursor:
+              !sessionVerified || showProtectionCard ? "not-allowed" : "pointer",
             marginBottom: 12,
           }}
         >
