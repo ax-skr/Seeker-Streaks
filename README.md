@@ -20,7 +20,7 @@ The system emphasizes long-term consistency over short-term activity, creating a
 
 ## 📱 Features
 
-- 🔐 Secure wallet authentication (Seeker / Phantom / Solflare)
+- 🔐 Secure wallet authentication
 - 🧾 Nonce-based verification (no private data exposed)
 - 📅 Daily UTC check-in system
 - 🔁 Deterministic streak tracking
