@@ -51,7 +51,7 @@ By encouraging daily interaction, it strengthens engagement, retention, and on-c
 
 ## 📦 Android APK
 
-Installable demo build available via GitHub Releases:
+Installable build available via GitHub Releases:
 
 👉 See **Releases** section for APK download
 
@@ -59,7 +59,7 @@ Compatible with Android devices and optimized for Solana Seeker.
 
 ---
 
-## 🎥 Demo
+## 🎥 Demo Video
 
 Demo video showcasing app functionality:
 
