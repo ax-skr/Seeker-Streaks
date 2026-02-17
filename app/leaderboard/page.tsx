@@ -49,6 +49,9 @@ export default function LeaderboardPage() {
   // cache to avoid re-resolving names
   const nameCache = useRef<Map<string, string | null>>(new Map());
 
+  // used to cancel stale background name-resolves on refresh/navigation
+  const loadSeq = useRef(0);
+
   async function resolveName(wallet: string): Promise<string | null> {
     if (!wallet) return null;
     if (nameCache.current.has(wallet))
@@ -108,9 +111,27 @@ export default function LeaderboardPage() {
     }
   }
 
+  // run tasks with a small concurrency limit (prevents 100 requests firing at once)
+  async function runWithConcurrency<T>(
+    items: T[],
+    concurrency: number,
+    worker: (item: T) => Promise<void>
+  ) {
+    let i = 0;
+    const runners = new Array(Math.max(1, concurrency)).fill(0).map(async () => {
+      while (i < items.length) {
+        const idx = i++;
+        await worker(items[idx]);
+      }
+    });
+    await Promise.all(runners);
+  }
+
   async function load() {
     setLoading(true);
     setErr(null);
+
+    const seq = ++loadSeq.current;
 
     try {
       const res = await fetch(`${baseUrl}/api/leaderboard`, {
@@ -138,21 +159,32 @@ export default function LeaderboardPage() {
 
       // ✅ Only show top 100
       const top100 = normalized.slice(0, 100);
-      setRows(top100);
 
-      // Resolve .skr names (non-blocking) for top 100 only
-      const resolved = await Promise.all(
-        top100.map(async (r) => {
+      // ✅ Render immediately (FAST) — don’t wait for name resolution
+      setRows(top100);
+      setLoading(false);
+
+      // ✅ Resolve .skr names in the background (stable + fast)
+      // Keep alignment/look exactly the same — names just “fill in” as they resolve.
+      void (async () => {
+        await runWithConcurrency(top100, 6, async (r) => {
+          // cancel if a newer load() started
+          if (loadSeq.current !== seq) return;
+
           const n = await resolveName(r.wallet);
-          return { ...r, name: n };
-        })
-      );
-      setRows(resolved);
+
+          if (loadSeq.current !== seq) return;
+
+          // update just this row (no layout change)
+          setRows((prev) =>
+            prev.map((x) => (x.wallet === r.wallet ? { ...x, name: n } : x))
+          );
+        });
+      })();
     } catch (e: any) {
       console.error(e);
       setErr(e?.message || "Failed to load leaderboard");
       setRows([]);
-    } finally {
       setLoading(false);
     }
   }
@@ -619,15 +651,12 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(0,0,0,0.14)",
   },
   colRank: { display: "flex", alignItems: "center" },
-
-  // ✅ key: allow this grid cell to shrink
   colName: {
     display: "flex",
     minWidth: 0,
     flexDirection: "column",
     justifyContent: "center",
   },
-
   colPoints: {
     display: "flex",
     flexDirection: "column",
@@ -651,8 +680,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 900,
   },
   userLine: { display: "flex", alignItems: "center", gap: 10, minWidth: 0 },
-
-  // ✅ key: truncate long .skr names so stats never move
   userName: {
     fontWeight: 900,
     letterSpacing: 0.2,
@@ -663,7 +690,6 @@ const styles: Record<string, React.CSSProperties> = {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-
   skrGlow: {
     color: "rgba(0,255,163,0.95)",
     textShadow: "0 0 12px rgba(0,255,163,0.45)",
