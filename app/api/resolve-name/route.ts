@@ -13,13 +13,11 @@ const RPC_URL =
 const connection = new Connection(RPC_URL, "confirmed");
 const parser = new TldParser(connection);
 
-// If your DB previously stored this, we IGNORE it (do not treat as cached)
+// Legacy sentinel some older code stored in users.skr_name
 const LEGACY_NONE = "__NONE__";
 
 // Cache headers tuned by result
 function withCacheHeaders(res: NextResponse, nameFound: boolean) {
-  // If name found: cache longer (edge/CDN)
-  // If no name: cache briefly so it retries later (names can change)
   if (nameFound) {
     res.headers.set(
       "Cache-Control",
@@ -38,10 +36,8 @@ async function resolveMainDomain(wallet: string): Promise<string | null> {
   try {
     const owner = new PublicKey(wallet);
     const [mainDomainPubkey] = findMainDomain(owner);
-
     const md = await MainDomain.fromAccountAddress(connection, mainDomainPubkey);
     if (!md?.domain || !md?.tld) return null;
-
     return `${md.domain}${md.tld}`; // md.tld includes dot
   } catch {
     return null;
@@ -57,7 +53,6 @@ async function resolveFallbackSkrDomain(wallet: string): Promise<string | null> 
       owner,
       "skr"
     );
-
     if (!Array.isArray(domains) || domains.length === 0) return null;
 
     for (const d of domains) {
@@ -94,7 +89,6 @@ async function resolveNameForWallet(wallet: string): Promise<string | null> {
 }
 
 async function readWalletFromReq(req: NextRequest): Promise<string> {
-  // supports both POST JSON and GET query param
   if (req.method === "GET") {
     const { searchParams } = new URL(req.url);
     return String(searchParams.get("wallet") ?? "").trim();
@@ -118,12 +112,15 @@ async function handle(req: NextRequest) {
 
     if (!wallet) {
       return withCacheHeaders(
-        NextResponse.json({ ok: false, error: "wallet required" }, { status: 400 }),
+        NextResponse.json(
+          { ok: false, error: "wallet required" },
+          { status: 400 }
+        ),
         false
       );
     }
 
-    // 1) DB cache check (ONLY trust real .skr names)
+    // 1) DB cache check
     const { data: user, error: selErr } = await supabaseAdmin
       .from("users")
       .select("wallet, skr_name")
@@ -140,8 +137,18 @@ async function handle(req: NextRequest) {
       );
     }
 
-    // If DB has a real cached .skr, return it immediately
     const cachedRaw = user?.skr_name ? String(user.skr_name).trim() : "";
+
+    // ✅ If we see legacy sentinel in DB, auto-clean it to NULL (best-effort)
+    if (user?.wallet && cachedRaw === LEGACY_NONE) {
+      // Fire-and-forget: don't block response (no .then/.catch -> no TS underline)
+      void supabaseAdmin
+        .from("users")
+        .update({ skr_name: null })
+        .eq("wallet", wallet);
+    }
+
+    // ✅ Trust only real .skr values
     const cachedLooksValid =
       !!cachedRaw &&
       cachedRaw !== LEGACY_NONE &&
@@ -165,12 +172,14 @@ async function handle(req: NextRequest) {
     const cleaned =
       resolved && String(resolved).trim() ? String(resolved).trim() : null;
 
-    // 3) Cache ONLY if a real name exists.
-    //    (Do NOT store "__NONE__" anymore; it poisons future resolves.)
-    if (user?.wallet && cleaned && cleaned.toLowerCase().endsWith(".skr")) {
+    const finalName =
+      cleaned && cleaned.toLowerCase().endsWith(".skr") ? cleaned : null;
+
+    // 3) Cache ONLY real .skr names (never write __NONE__)
+    if (user?.wallet && finalName) {
       await supabaseAdmin
         .from("users")
-        .update({ skr_name: cleaned })
+        .update({ skr_name: finalName })
         .eq("wallet", wallet);
     }
 
@@ -178,20 +187,24 @@ async function handle(req: NextRequest) {
       NextResponse.json({
         ok: true,
         wallet,
-        name: cleaned,
+        name: finalName,
         cached: false,
-        source: cleaned ? "onchain" : "none",
-        note: cleaned
+        source: finalName ? "onchain" : "none",
+        note: finalName
           ? undefined
           : "No main .skr set (and no owned .skr found). User may need to set a main domain in AllDomains.",
       }),
-      !!cleaned
+      !!finalName
     );
   } catch (e: any) {
     console.error("resolve-name error:", e);
     return withCacheHeaders(
       NextResponse.json(
-        { ok: false, error: "Internal server error", detail: String(e?.message || e) },
+        {
+          ok: false,
+          error: "Internal server error",
+          detail: String(e?.message || e),
+        },
         { status: 500 }
       ),
       false
