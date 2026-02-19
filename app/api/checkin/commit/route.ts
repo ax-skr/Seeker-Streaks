@@ -14,9 +14,42 @@ const TREASURY_WALLET = new PublicKey(
   process.env.TREASURY_WALLET || process.env.NEXT_PUBLIC_TREASURY_WALLET || ""
 );
 
+// --- NEW: best-effort refresh of skr_name after success (fire-and-forget) ---
+function getSiteBaseUrl(): string {
+  // Prefer an explicit site URL if you set one
+  const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (explicit) return explicit.startsWith("http") ? explicit : `https://${explicit}`;
+
+  // Vercel provides VERCEL_URL like "your-app.vercel.app"
+  const vercel = process.env.VERCEL_URL?.trim();
+  if (vercel) return vercel.startsWith("http") ? vercel : `https://${vercel}`;
+
+  // Local dev fallback
+  return "http://localhost:3000";
+}
+
+function refreshSkrName(wallet: string) {
+  if (!wallet) return;
+
+  // Fire-and-forget; never block check-in response
+  try {
+    const base = getSiteBaseUrl();
+    fetch(`${base}/api/resolve-names-batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ wallets: [wallet] }),
+      // don't care about caching here
+    }).catch(() => {});
+  } catch {
+    // ignore
+  }
+}
+
 function todayUTCISO(): string {
   const now = new Date();
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const d = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  );
   return d.toISOString().slice(0, 10);
 }
 
@@ -34,7 +67,10 @@ function getRpc(): string {
   );
 }
 
-async function getMintDecimals(connection: Connection, mint: PublicKey): Promise<number> {
+async function getMintDecimals(
+  connection: Connection,
+  mint: PublicKey
+): Promise<number> {
   const info = await connection.getParsedAccountInfo(mint, "confirmed");
   const v: any = info?.value;
   const decimals = v?.data?.parsed?.info?.decimals;
@@ -83,7 +119,9 @@ function minuteBucketUTC(): string {
 async function rateLimit(wallet: string, route: string) {
   const bucket = minuteBucketUTC();
 
-  const { error } = await supabaseAdmin.from("rate_limits").insert({ wallet, route, bucket });
+  const { error } = await supabaseAdmin
+    .from("rate_limits")
+    .insert({ wallet, route, bucket });
 
   if (error) {
     const code = (error as any).code;
@@ -108,7 +146,8 @@ function withProtectionAliases<T extends Record<string, any>>(payload: T) {
     canProtect: typeof canRescue === "boolean" ? canRescue : undefined,
     protectionRequired: typeof canRescue === "boolean" ? canRescue : undefined,
     protectionCostSKR: typeof costSKR === "number" ? costSKR : undefined,
-    protectionsLeft: typeof remainingRescue === "number" ? remainingRescue : undefined,
+    protectionsLeft:
+      typeof remainingRescue === "number" ? remainingRescue : undefined,
     missedDays, // keep
   };
 }
@@ -122,21 +161,32 @@ export async function POST(req: NextRequest) {
     const txSig = String(body?.txSig ?? "").trim();
 
     if (!wallet || !action) {
-      return NextResponse.json({ error: "wallet and action required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "wallet and action required" },
+        { status: 400 }
+      );
     }
 
     const rl = await rateLimit(wallet, "/api/checkin/commit");
     if (!rl.ok) {
-      return NextResponse.json({ error: "Too many requests. Try again in a moment." }, { status: 429 });
+      return NextResponse.json(
+        { error: "Too many requests. Try again in a moment." },
+        { status: 429 }
+      );
     }
 
     if (action === "rescue_paid" && rescueDays > MAX_RESCUE_DAYS) {
-      return NextResponse.json({ error: "rescueDays exceeds MAX_RESCUE_DAYS" }, { status: 400 });
+      return NextResponse.json(
+        { error: "rescueDays exceeds MAX_RESCUE_DAYS" },
+        { status: 400 }
+      );
     }
 
     const { data: user, error: userErr } = await supabaseAdmin
       .from("users")
-      .select("wallet, points, streak, last_checkin_date, rescued_days_used_run, verified_at")
+      .select(
+        "wallet, points, streak, last_checkin_date, rescued_days_used_run, verified_at"
+      )
       .eq("wallet", wallet)
       .maybeSingle();
 
@@ -158,12 +208,17 @@ export async function POST(req: NextRequest) {
           rescued_days_used_run: 0,
           verified_at: null,
         })
-        .select("wallet, points, streak, last_checkin_date, rescued_days_used_run, verified_at")
+        .select(
+          "wallet, points, streak, last_checkin_date, rescued_days_used_run, verified_at"
+        )
         .single();
 
       if (insErr || !inserted) {
         console.error("USER INSERT ERROR:", insErr);
-        return NextResponse.json({ error: "Failed to create user" }, { status: 500 });
+        return NextResponse.json(
+          { error: "Failed to create user" },
+          { status: 500 }
+        );
       }
 
       u = inserted;
@@ -186,7 +241,10 @@ export async function POST(req: NextRequest) {
     // -------- CHECKIN --------
     if (action === "checkin") {
       if (u.last_checkin_date === today) {
-        return NextResponse.json({ error: "Already checked in today" }, { status: 409 });
+        return NextResponse.json(
+          { error: "Already checked in today" },
+          { status: 409 }
+        );
       }
 
       if (u.last_checkin_date) {
@@ -229,6 +287,9 @@ export async function POST(req: NextRequest) {
             })
             .eq("wallet", wallet);
 
+          // NEW: refresh name after success (best-effort)
+          refreshSkrName(wallet);
+
           return NextResponse.json({
             ok: true,
             action: "checkin",
@@ -261,7 +322,15 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Failed to check in" }, { status: 500 });
       }
 
-      return NextResponse.json({ ok: true, action: "checkin", streak: newStreak, points: newPoints });
+      // NEW: refresh name after success (best-effort)
+      refreshSkrName(wallet);
+
+      return NextResponse.json({
+        ok: true,
+        action: "checkin",
+        streak: newStreak,
+        points: newPoints,
+      });
     }
 
     // -------- RESET STREAK (FREE) --------
@@ -290,8 +359,14 @@ export async function POST(req: NextRequest) {
 
       if (resetErr) {
         console.error("RESET STREAK ERROR:", resetErr);
-        return NextResponse.json({ error: "Failed to reset streak" }, { status: 500 });
+        return NextResponse.json(
+          { error: "Failed to reset streak" },
+          { status: 500 }
+        );
       }
+
+      // NEW: refresh name after success (best-effort)
+      refreshSkrName(wallet);
 
       return NextResponse.json({
         ok: true,
@@ -308,7 +383,10 @@ export async function POST(req: NextRequest) {
     // DB/action stays rescue_paid, UI calls it “protection”
     if (action === "rescue_paid") {
       if (!Number.isFinite(rescueDays) || rescueDays <= 0) {
-        return NextResponse.json({ error: "rescueDays required (>0)" }, { status: 400 });
+        return NextResponse.json(
+          { error: "rescueDays required (>0)" },
+          { status: 400 }
+        );
       }
 
       if (!txSig) {
@@ -320,14 +398,22 @@ export async function POST(req: NextRequest) {
       const remainingRescue = MAX_RESCUE_DAYS - used;
 
       const stillAllowed =
-        missedDays > 0 && missedDays <= remainingRescue && missedDays <= MAX_RESCUE_DAYS;
+        missedDays > 0 &&
+        missedDays <= remainingRescue &&
+        missedDays <= MAX_RESCUE_DAYS;
 
       if (!stillAllowed) {
-        return NextResponse.json({ error: "Protection is not allowed right now." }, { status: 409 });
+        return NextResponse.json(
+          { error: "Protection is not allowed right now." },
+          { status: 409 }
+        );
       }
 
       if (rescueDays !== missedDays) {
-        return NextResponse.json({ error: "rescueDays mismatch" }, { status: 400 });
+        return NextResponse.json(
+          { error: "rescueDays mismatch" },
+          { status: 400 }
+        );
       }
 
       const conn = new Connection(getRpc(), "confirmed");
@@ -339,7 +425,11 @@ export async function POST(req: NextRequest) {
         BigInt(10) ** BigInt(decimals)
       ).toString();
 
-      const treasuryAta = await getAssociatedTokenAddress(SKR_MINT, TREASURY_WALLET, false);
+      const treasuryAta = await getAssociatedTokenAddress(
+        SKR_MINT,
+        TREASURY_WALLET,
+        false
+      );
 
       const tx = await conn.getParsedTransaction(txSig, {
         commitment: "confirmed",
@@ -347,17 +437,25 @@ export async function POST(req: NextRequest) {
       });
 
       if (!tx) {
-        return NextResponse.json({ error: "Transaction not confirmed yet." }, { status: 409 });
+        return NextResponse.json(
+          { error: "Transaction not confirmed yet." },
+          { status: 409 }
+        );
       }
       if (tx.meta?.err) {
-        return NextResponse.json({ error: "Transaction failed on-chain." }, { status: 409 });
+        return NextResponse.json(
+          { error: "Transaction failed on-chain." },
+          { status: 409 }
+        );
       }
 
       const mintStr = SKR_MINT.toBase58();
       const treasuryAtaStr = treasuryAta.toBase58();
 
       const top = tx.transaction.message.instructions ?? [];
-      const inner = (tx.meta?.innerInstructions ?? []).flatMap((x: any) => x.instructions ?? []);
+      const inner = (tx.meta?.innerInstructions ?? []).flatMap(
+        (x: any) => x.instructions ?? []
+      );
       const allInstructions = [...top, ...inner];
 
       const okPay = allInstructions.some((ix: any) =>
@@ -370,7 +468,10 @@ export async function POST(req: NextRequest) {
       );
 
       if (!okPay) {
-        return NextResponse.json({ error: "Payment verification failed." }, { status: 403 });
+        return NextResponse.json(
+          { error: "Payment verification failed." },
+          { status: 403 }
+        );
       }
 
       const paymentPayload = {
@@ -410,11 +511,18 @@ export async function POST(req: NextRequest) {
         .maybeSingle();
 
       if (fuErr || !freshUser) {
-        return NextResponse.json({ error: "Failed to refresh user" }, { status: 500 });
+        return NextResponse.json(
+          { error: "Failed to refresh user" },
+          { status: 500 }
+        );
       }
 
       if (freshUser.last_checkin_date === today) {
         const usedNow = freshUser.rescued_days_used_run ?? 0;
+
+        // NEW: refresh name after success (best-effort)
+        refreshSkrName(wallet);
+
         return NextResponse.json({
           ok: true,
           action: "rescue_paid",
@@ -438,10 +546,16 @@ export async function POST(req: NextRequest) {
 
       if (applyErr) {
         console.error("RESCUE APPLY ERROR:", applyErr);
-        return NextResponse.json({ error: "Failed to apply protection" }, { status: 500 });
+        return NextResponse.json(
+          { error: "Failed to apply protection" },
+          { status: 500 }
+        );
       }
 
       const left = Math.max(0, MAX_RESCUE_DAYS - (usedNow + rescueDays));
+
+      // NEW: refresh name after success (best-effort)
+      refreshSkrName(wallet);
 
       return NextResponse.json({
         ok: true,

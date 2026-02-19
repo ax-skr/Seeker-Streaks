@@ -13,15 +13,24 @@ const RPC_URL =
 const connection = new Connection(RPC_URL, "confirmed");
 const parser = new TldParser(connection);
 
-// Sentinel = we store this in users.skr_name to mean "no .skr"
-const NONE = "__NONE__";
+// If your DB previously stored this, we IGNORE it (do not treat as cached)
+const LEGACY_NONE = "__NONE__";
 
-function withCacheHeaders(res: NextResponse) {
-  // Cache at Vercel edge/CDN
-  res.headers.set(
-    "Cache-Control",
-    "public, max-age=0, s-maxage=86400, stale-while-revalidate=604800"
-  );
+// Cache headers tuned by result
+function withCacheHeaders(res: NextResponse, nameFound: boolean) {
+  // If name found: cache longer (edge/CDN)
+  // If no name: cache briefly so it retries later (names can change)
+  if (nameFound) {
+    res.headers.set(
+      "Cache-Control",
+      "public, max-age=0, s-maxage=86400, stale-while-revalidate=604800"
+    );
+  } else {
+    res.headers.set(
+      "Cache-Control",
+      "public, max-age=0, s-maxage=300, stale-while-revalidate=3600"
+    );
+  }
   return res;
 }
 
@@ -33,8 +42,7 @@ async function resolveMainDomain(wallet: string): Promise<string | null> {
     const md = await MainDomain.fromAccountAddress(connection, mainDomainPubkey);
     if (!md?.domain || !md?.tld) return null;
 
-    // md.tld includes the dot (".skr")
-    return `${md.domain}${md.tld}`;
+    return `${md.domain}${md.tld}`; // md.tld includes dot
   } catch {
     return null;
   }
@@ -101,7 +109,6 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  // Still supported, but leaderboard will use GET
   return handle(req);
 }
 
@@ -111,11 +118,12 @@ async function handle(req: NextRequest) {
 
     if (!wallet) {
       return withCacheHeaders(
-        NextResponse.json({ ok: false, error: "wallet required" }, { status: 400 })
+        NextResponse.json({ ok: false, error: "wallet required" }, { status: 400 }),
+        false
       );
     }
 
-    // 1) DB cache check (also caches NONE)
+    // 1) DB cache check (ONLY trust real .skr names)
     const { data: user, error: selErr } = await supabaseAdmin
       .from("users")
       .select("wallet, skr_name")
@@ -127,46 +135,57 @@ async function handle(req: NextRequest) {
         NextResponse.json(
           { ok: false, error: "Failed to load user", detail: selErr.message },
           { status: 500 }
-        )
+        ),
+        false
       );
     }
 
-    // If cached (including NONE), return immediately
-    if (user?.skr_name) {
-      const raw = String(user.skr_name);
-      const name = raw === NONE ? null : raw;
+    // If DB has a real cached .skr, return it immediately
+    const cachedRaw = user?.skr_name ? String(user.skr_name).trim() : "";
+    const cachedLooksValid =
+      !!cachedRaw &&
+      cachedRaw !== LEGACY_NONE &&
+      cachedRaw.toLowerCase().endsWith(".skr");
 
+    if (cachedLooksValid) {
       return withCacheHeaders(
         NextResponse.json({
           ok: true,
           wallet,
-          name,
+          name: cachedRaw,
           cached: true,
           source: "db_cache",
-        })
+        }),
+        true
       );
     }
 
     // 2) Resolve from chain (slow path)
-    const name = await resolveNameForWallet(wallet);
+    const resolved = await resolveNameForWallet(wallet);
+    const cleaned =
+      resolved && String(resolved).trim() ? String(resolved).trim() : null;
 
-    // 3) Cache result in DB: store real name OR NONE sentinel
-    if (user?.wallet) {
-      const toStore = name ? name : NONE;
-      await supabaseAdmin.from("users").update({ skr_name: toStore }).eq("wallet", wallet);
+    // 3) Cache ONLY if a real name exists.
+    //    (Do NOT store "__NONE__" anymore; it poisons future resolves.)
+    if (user?.wallet && cleaned && cleaned.toLowerCase().endsWith(".skr")) {
+      await supabaseAdmin
+        .from("users")
+        .update({ skr_name: cleaned })
+        .eq("wallet", wallet);
     }
 
     return withCacheHeaders(
       NextResponse.json({
         ok: true,
         wallet,
-        name: name ?? null,
+        name: cleaned,
         cached: false,
-        source: name ? "onchain" : "none",
-        note: name
+        source: cleaned ? "onchain" : "none",
+        note: cleaned
           ? undefined
           : "No main .skr set (and no owned .skr found). User may need to set a main domain in AllDomains.",
-      })
+      }),
+      !!cleaned
     );
   } catch (e: any) {
     console.error("resolve-name error:", e);
@@ -174,7 +193,8 @@ async function handle(req: NextRequest) {
       NextResponse.json(
         { ok: false, error: "Internal server error", detail: String(e?.message || e) },
         { status: 500 }
-      )
+      ),
+      false
     );
   }
 }

@@ -29,6 +29,8 @@ async function safeJson(res: Response) {
   return res.json();
 }
 
+type CacheEntry = { value: string | null; expiresAt: number };
+
 export default function LeaderboardPage() {
   const { publicKey, connected } = useWallet();
 
@@ -46,85 +48,27 @@ export default function LeaderboardPage() {
 
   const myWallet = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
 
-  // cache to avoid re-resolving names
-  const nameCache = useRef<Map<string, string | null>>(new Map());
+  // cache with TTL:
+  // - real names: 24h
+  // - null: 5 min (so new .skr can appear later without hard refresh)
+  const nameCache = useRef<Map<string, CacheEntry>>(new Map());
 
-  // used to cancel stale background name-resolves on refresh/navigation
+  // used to cancel stale background tasks on refresh/navigation
   const loadSeq = useRef(0);
 
-  async function resolveName(wallet: string): Promise<string | null> {
-    if (!wallet) return null;
-    if (nameCache.current.has(wallet))
-      return nameCache.current.get(wallet) ?? null;
-
-    // Try POST first (most common)
-    try {
-      const res = await fetch(`${baseUrl}/api/resolve-name`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ wallet }),
-        cache: "no-store",
-      });
-
-      const data = await safeJson(res);
-      const name =
-        (data?.name ??
-          data?.skr ??
-          data?.username ??
-          data?.displayName ??
-          null) as string | null;
-
-      const cleaned = name && String(name).trim() ? String(name).trim() : null;
-      nameCache.current.set(wallet, cleaned);
-      return cleaned;
-    } catch {
-      // fallback GET if your route uses querystring
-      try {
-        const res2 = await fetch(
-          `${baseUrl}/api/resolve-name?wallet=${encodeURIComponent(wallet)}`,
-          {
-            method: "GET",
-            headers: { Accept: "application/json" },
-            cache: "no-store",
-          }
-        );
-
-        const data2 = await safeJson(res2);
-        const name2 =
-          (data2?.name ??
-            data2?.skr ??
-            data2?.username ??
-            data2?.displayName ??
-            null) as string | null;
-
-        const cleaned2 =
-          name2 && String(name2).trim() ? String(name2).trim() : null;
-        nameCache.current.set(wallet, cleaned2);
-        return cleaned2;
-      } catch {
-        nameCache.current.set(wallet, null);
-        return null;
-      }
+  function getCachedName(wallet: string): string | null | undefined {
+    const entry = nameCache.current.get(wallet);
+    if (!entry) return undefined;
+    if (Date.now() > entry.expiresAt) {
+      nameCache.current.delete(wallet);
+      return undefined;
     }
+    return entry.value;
   }
 
-  // run tasks with a small concurrency limit (prevents 100 requests firing at once)
-  async function runWithConcurrency<T>(
-    items: T[],
-    concurrency: number,
-    worker: (item: T) => Promise<void>
-  ) {
-    let i = 0;
-    const runners = new Array(Math.max(1, concurrency)).fill(0).map(async () => {
-      while (i < items.length) {
-        const idx = i++;
-        await worker(items[idx]);
-      }
-    });
-    await Promise.all(runners);
+  function setCachedName(wallet: string, value: string | null) {
+    const ttlMs = value ? 24 * 60 * 60 * 1000 : 5 * 60 * 1000;
+    nameCache.current.set(wallet, { value, expiresAt: Date.now() + ttlMs });
   }
 
   async function load() {
@@ -154,32 +98,70 @@ export default function LeaderboardPage() {
         points: Number(r.points ?? 0),
         streak: Number(r.streak ?? 0),
         rank: Number(r.rank ?? i + 1),
-        name: null,
+        // leaderboard API may already send cached name
+        name: typeof r.name === "string" && r.name.trim() ? String(r.name).trim() : null,
       }));
 
-      // ✅ Only show top 100
       const top100 = normalized.slice(0, 100);
 
-      // ✅ Render immediately (FAST) — don’t wait for name resolution
+      // ✅ show immediately
       setRows(top100);
       setLoading(false);
 
-      // ✅ Resolve .skr names in the background (stable + fast)
-      // Keep alignment/look exactly the same — names just “fill in” as they resolve.
+      // ✅ batch resolve missing names (ONE request, ONE state update)
       void (async () => {
-        await runWithConcurrency(top100, 6, async (r) => {
-          // cancel if a newer load() started
+        try {
           if (loadSeq.current !== seq) return;
 
-          const n = await resolveName(r.wallet);
+          const walletsToResolve = top100
+            .map((r) => r.wallet)
+            .filter(Boolean)
+            .filter((w) => {
+              const cached = getCachedName(w);
+              return cached === undefined; // only if not cached
+            });
+
+          // if nothing new to resolve, still populate from cache (if any)
+          if (walletsToResolve.length === 0) {
+            setRows((prev) =>
+              prev.map((x) => {
+                const cached = getCachedName(x.wallet);
+                return cached !== undefined ? { ...x, name: cached } : x;
+              })
+            );
+            return;
+          }
+
+          const resN = await fetch(`${baseUrl}/api/resolve-names-batch`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({ wallets: walletsToResolve }),
+            cache: "no-store",
+          });
+
+          const dataN = await safeJson(resN);
+          const names: Record<string, string | null> = dataN?.names ?? {};
+
+          // store into client TTL cache
+          for (const w of Object.keys(names)) {
+            setCachedName(w, names[w] ?? null);
+          }
 
           if (loadSeq.current !== seq) return;
 
-          // update just this row (no layout change)
+          // one update
           setRows((prev) =>
-            prev.map((x) => (x.wallet === r.wallet ? { ...x, name: n } : x))
+            prev.map((x) => {
+              const cached = getCachedName(x.wallet);
+              return cached !== undefined ? { ...x, name: cached } : x;
+            })
           );
-        });
+        } catch {
+          // ignore - wallets still show
+        }
       })();
     } catch (e: any) {
       console.error(e);
@@ -197,7 +179,6 @@ export default function LeaderboardPage() {
 
     setMyLoading(true);
     try {
-      // Try to find my row from the same leaderboard payload (no new API required)
       const res = await fetch(`${baseUrl}/api/leaderboard`, {
         method: "GET",
         headers: { Accept: "application/json" },
@@ -218,7 +199,7 @@ export default function LeaderboardPage() {
         points: Number(r.points ?? 0),
         streak: Number(r.streak ?? 0),
         rank: Number(r.rank ?? i + 1),
-        name: null,
+        name: typeof r.name === "string" && r.name.trim() ? String(r.name).trim() : null,
       }));
 
       const mine = normalized.find((r) => r.wallet && r.wallet === myWallet);
@@ -234,10 +215,13 @@ export default function LeaderboardPage() {
         return;
       }
 
-      const n = await resolveName(mine.wallet);
+      // use cache if available
+      const cached = getCachedName(mine.wallet);
+      const n = cached !== undefined ? cached : mine.name ?? null;
+      if (cached === undefined) setCachedName(mine.wallet, n);
+
       setMyRow({ ...mine, name: n });
     } catch {
-      // If this fails, we just don't show the bottom card.
       setMyRow(null);
     } finally {
       setMyLoading(false);
@@ -250,7 +234,6 @@ export default function LeaderboardPage() {
   }, [baseUrl]);
 
   useEffect(() => {
-    // load user's row when they connect / change wallet
     loadMyRank();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myWallet, baseUrl]);
@@ -487,16 +470,14 @@ export default function LeaderboardPage() {
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-        /* ✅ Ensure the "User" column can shrink, and long names don't push stats */
         .lbRow > div:nth-child(2),
         .lbHead > div:nth-child(2) {
           min-width: 0;
         }
 
-        /* ✅ Mobile: show more of long .skr names without breaking alignment */
         @media (max-width: 520px) {
           .lbHead, .lbRow {
-            grid-template-columns: 58px 1fr 74px 74px !important; /* more room for USER */
+            grid-template-columns: 58px 1fr 74px 74px !important;
           }
           .lbWrap {
             overflow-x: hidden !important;
