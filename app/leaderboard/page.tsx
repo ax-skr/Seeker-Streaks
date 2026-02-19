@@ -662,15 +662,19 @@ const styles: Record<string, React.CSSProperties> = {
   },
   userLine: { display: "flex", alignItems: "center", gap: 10, minWidth: 0 },
   userName: {
-    fontWeight: 900,
-    letterSpacing: 0.2,
-    display: "block",
-    minWidth: 0,
-    maxWidth: "100%",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
+  fontWeight: 900,
+  letterSpacing: 0.2,
+  display: "block",
+  minWidth: 0,
+  maxWidth: "100%",
+
+  // ✅ SHOW FULL .skr NAME WITHOUT BREAKING LAYOUT
+  whiteSpace: "normal",
+  overflowWrap: "anywhere",
+  wordBreak: "break-word",
+  lineHeight: 1.1,
+  maxHeight: "2.2em", // max 2 lines
+},
   skrGlow: {
     color: "rgba(0,255,163,0.95)",
     textShadow: "0 0 12px rgba(0,255,163,0.45)",
