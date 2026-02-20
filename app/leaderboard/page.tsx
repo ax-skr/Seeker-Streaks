@@ -339,7 +339,8 @@ export default function LeaderboardPage() {
                       <div style={styles.userLine}>
                         <span
                           className="lbUserName"
-                          style={styles.userName}
+                          // ✅ show .skr names up to 2 lines; wallets stay 1 line
+                          style={showSkr ? styles.userName : styles.userNameSingle}
                           title={display}
                         >
                           {display}
@@ -425,22 +426,23 @@ export default function LeaderboardPage() {
 
                 <div style={styles.colName}>
                   <div style={styles.userLine}>
-                    <span
-                      className="lbUserName"
-                      style={styles.userName}
-                      title={
+                    {(() => {
+                      const display =
                         (myRow.name && myRow.name.trim()) ||
-                        shortWallet(myRow.wallet)
-                      }
-                    >
-                      {(myRow.name && myRow.name.trim()) ||
-                        shortWallet(myRow.wallet)}
-                      {((myRow.name && myRow.name.trim()) || "")
-                        .toLowerCase()
-                        .endsWith(".skr") && (
-                        <span style={styles.skrGlow}> •</span>
-                      )}
-                    </span>
+                        shortWallet(myRow.wallet);
+                      const showSkr = display.toLowerCase().endsWith(".skr");
+                      return (
+                        <span
+                          className="lbUserName"
+                          // ✅ same fix for "Your position"
+                          style={showSkr ? styles.userName : styles.userNameSingle}
+                          title={display}
+                        >
+                          {display}
+                          {showSkr && <span style={styles.skrGlow}> •</span>}
+                        </span>
+                      );
+                    })()}
                   </div>
                   <div className="lbWalletLine" style={styles.walletLine}>
                     {shortWallet(myRow.wallet)}
@@ -660,7 +662,22 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 900,
   },
   userLine: { display: "flex", alignItems: "center", gap: 10, minWidth: 0 },
+
+  // ✅ NEW: 2-line clamp for long .skr usernames (no scroll, no layout break)
   userName: {
+    fontWeight: 900,
+    letterSpacing: 0.2,
+    display: "-webkit-box",
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: "vertical",
+    overflow: "hidden",
+    whiteSpace: "normal",
+    wordBreak: "break-word",
+    lineHeight: 1.15,
+  },
+
+  // ✅ NEW: keep non-.skr short-wallet style as before (single line)
+  userNameSingle: {
     fontWeight: 900,
     letterSpacing: 0.2,
     display: "block",
@@ -670,6 +687,7 @@ const styles: Record<string, React.CSSProperties> = {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
+
   skrGlow: {
     color: "rgba(0,255,163,0.95)",
     textShadow: "0 0 12px rgba(0,255,163,0.45)",
