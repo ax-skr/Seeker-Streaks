@@ -117,7 +117,7 @@ export default function Home() {
 
   const walletStr = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
 
-  // ---------- load protection quote (same route) ----------
+  // ---------- load protection quote ----------
   const loadQuote = useCallback(async () => {
     if (!walletStr) return;
 
@@ -129,7 +129,7 @@ export default function Home() {
     });
 
     if (!res.ok) {
-      const t = await res.text();
+      const t = await res.text().catch(() => "");
       setMsg(`Protection quote failed (${res.status}).`);
       console.error("quote error:", t);
       return;
@@ -190,9 +190,10 @@ export default function Home() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ wallet: walletStr }),
+      cache: "no-store",
     });
 
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
     setStatus(json);
 
     if (json?.missedDays > 0) {
@@ -213,8 +214,13 @@ export default function Home() {
       setVerifying(true);
       setMsg("");
 
-      const nonceRes = await fetch("/api/auth/nonce");
-      const nonceJson = await nonceRes.json();
+      const nonceRes = await fetch("/api/auth/nonce", { cache: "no-store" });
+      const nonceJson = await nonceRes.json().catch(() => ({}));
+
+      if (!nonceRes.ok || !nonceJson?.message) {
+        setMsg(nonceJson?.error || "Failed to get auth nonce");
+        return;
+      }
 
       const signature = await signMessage(
         new TextEncoder().encode(nonceJson.message)
@@ -228,11 +234,12 @@ export default function Home() {
           message: nonceJson.message,
           signature: toBase64(signature),
         }),
+        cache: "no-store",
       });
 
-      const verifyJson = await verifyRes.json();
-      if (!verifyJson.ok) {
-        setMsg("Verification failed.");
+      const verifyJson = await verifyRes.json().catch(() => ({}));
+      if (!verifyRes.ok || !verifyJson.ok) {
+        setMsg(verifyJson?.error || "Verification failed.");
         return;
       }
 
@@ -247,37 +254,41 @@ export default function Home() {
     }
   }, [connected, walletStr, signMessage, loadStatus, loadQuote]);
 
-  // ---------- check in ----------
+  // ---------- check in (NORMAL / NO NONCE) ----------
   const checkIn = useCallback(async () => {
     if (!walletStr) return;
 
     setMsg("");
 
-    const res = await fetch("/api/checkin/commit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        wallet: walletStr,
-        action: "checkin",
-      }),
-    });
+    try {
+      const res = await fetch("/api/checkin/commit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          wallet: walletStr,
+          action: "checkin",
+        }),
+        cache: "no-store",
+      });
 
-    const json = await res.json().catch(() => ({}));
+      const json = await res.json().catch(() => ({}));
 
-    if (res.status === 409 && json?.error === "rescue_required") {
-      // protection required
-      await loadQuote();
-      return;
+      if (res.status === 409 && json?.error === "rescue_required") {
+        await loadQuote();
+        return;
+      }
+
+      if (!res.ok) {
+        setMsg(json?.error || "Check-in failed.");
+        return;
+      }
+
+      setMsg(`Checked in • Streak ${json.streak}`);
+      setQuote(null);
+      await loadStatus();
+    } catch (e: any) {
+      setMsg(e?.message || "Check-in failed.");
     }
-
-    if (!res.ok) {
-      setMsg(json.error || "Check-in failed.");
-      return;
-    }
-
-    setMsg(`Checked in • Streak ${json.streak}`);
-    setQuote(null);
-    await loadStatus();
   }, [walletStr, loadStatus, loadQuote]);
 
   // ---------- reset streak (free) ----------
@@ -295,6 +306,7 @@ export default function Home() {
           wallet: walletStr,
           action: "reset_streak",
         }),
+        cache: "no-store",
       });
 
       const json = await res.json().catch(() => ({}));
@@ -397,10 +409,11 @@ export default function Home() {
           rescueDays: quote!.missedDays,
           txSig: sig,
         }),
+        cache: "no-store",
       });
 
       const commitJson = await commitRes.json().catch(() => ({}));
-      if (!commitRes.ok) throw new Error(commitJson.error || "Commit failed");
+      if (!commitRes.ok) throw new Error(commitJson?.error || "Commit failed");
 
       setMsg(
         `Protected ${commitJson.protectedDays ?? commitJson.rescuedDays} day(s) ✓`
@@ -457,10 +470,8 @@ export default function Home() {
 
           {connected && (
             <div style={{ marginTop: 12, fontSize: 14, opacity: 0.85 }}>
-              Connected:{" "}
-              <span style={{ fontWeight: 800 }}>{connectedLabel}</span>
+              Connected: <span style={{ fontWeight: 800 }}>{connectedLabel}</span>
 
-              {/* ✅ Friendly message when no main .skr is set */}
               {!skrName && (
                 <div style={{ marginTop: 8, fontSize: 12, opacity: 0.75 }}>
                   Set your .skr as Main Domain in AllDomains to display your name
@@ -531,8 +542,8 @@ export default function Home() {
 
             <div style={{ opacity: 0.85, marginBottom: 12 }}>
               You missed <strong>{quote!.missedDays}</strong> day(s). Pay{" "}
-              <strong>{quote!.protectionCostSKR ?? quote!.costSKR} SKR</strong>{" "}
-              to protect your current streak.
+              <strong>{quote!.protectionCostSKR ?? quote!.costSKR} SKR</strong> to
+              protect your current streak.
             </div>
 
             <button
@@ -550,9 +561,7 @@ export default function Home() {
                 opacity: paying || resetting ? 0.7 : 1,
               }}
             >
-              {paying
-                ? "Paying…"
-                : `Pay ${quote!.protectionCostSKR ?? quote!.costSKR} SKR`}
+              {paying ? "Paying…" : `Pay ${quote!.protectionCostSKR ?? quote!.costSKR} SKR`}
             </button>
 
             <button
@@ -600,8 +609,7 @@ export default function Home() {
                 ? "#1f2933"
                 : "linear-gradient(90deg,#22d3ee,#7c3aed)",
             border: "none",
-            color:
-              !sessionVerified || showProtectionCard ? "#6b7280" : "#020617",
+            color: !sessionVerified || showProtectionCard ? "#6b7280" : "#020617",
             fontWeight: 800,
             cursor:
               !sessionVerified || showProtectionCard ? "not-allowed" : "pointer",
