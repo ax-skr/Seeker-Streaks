@@ -53,7 +53,7 @@ export default function LeaderboardPage() {
   // - null: 5 min (so new .skr can appear later without hard refresh)
   const nameCache = useRef<Map<string, CacheEntry>>(new Map());
 
-  // used to cancel stale background tasks on refresh/navigation
+  // used to cancel stale background name-resolves on refresh/navigation
   const loadSeq = useRef(0);
 
   function getCachedName(wallet: string): string | null | undefined {
@@ -69,6 +69,54 @@ export default function LeaderboardPage() {
   function setCachedName(wallet: string, value: string | null) {
     const ttlMs = value ? 24 * 60 * 60 * 1000 : 5 * 60 * 1000;
     nameCache.current.set(wallet, { value, expiresAt: Date.now() + ttlMs });
+  }
+
+  async function resolveName(wallet: string): Promise<string | null> {
+    if (!wallet) return null;
+
+    const cached = getCachedName(wallet);
+    if (cached !== undefined) return cached;
+
+    try {
+      const res = await fetch(
+        `${baseUrl}/api/resolve-name?wallet=${encodeURIComponent(wallet)}`,
+        {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        }
+      );
+
+      const data = await safeJson(res);
+      const name =
+        (data?.name ??
+          data?.skr ??
+          data?.username ??
+          data?.displayName ??
+          null) as string | null;
+
+      const cleaned = name && String(name).trim() ? String(name).trim() : null;
+      setCachedName(wallet, cleaned);
+      return cleaned;
+    } catch {
+      setCachedName(wallet, null);
+      return null;
+    }
+  }
+
+  async function runWithConcurrency<T>(
+    items: T[],
+    concurrency: number,
+    worker: (item: T) => Promise<void>
+  ) {
+    let i = 0;
+    const runners = new Array(Math.max(1, concurrency)).fill(0).map(async () => {
+      while (i < items.length) {
+        const idx = i++;
+        await worker(items[idx]);
+      }
+    });
+    await Promise.all(runners);
   }
 
   async function load() {
@@ -98,70 +146,29 @@ export default function LeaderboardPage() {
         points: Number(r.points ?? 0),
         streak: Number(r.streak ?? 0),
         rank: Number(r.rank ?? i + 1),
-        // leaderboard API may already send cached name
-        name: typeof r.name === "string" && r.name.trim() ? String(r.name).trim() : null,
+        name: (typeof r.name === "string" ? r.name : null) as string | null,
       }));
 
       const top100 = normalized.slice(0, 100);
 
-      // ✅ show immediately
+      // FAST render
       setRows(top100);
       setLoading(false);
 
-      // ✅ batch resolve missing names (ONE request, ONE state update)
+      // background name fill (only for ones without name already)
       void (async () => {
-        try {
+        await runWithConcurrency(top100, 6, async (r) => {
           if (loadSeq.current !== seq) return;
+          if (r.name && r.name.toLowerCase().endsWith(".skr")) return;
 
-          const walletsToResolve = top100
-            .map((r) => r.wallet)
-            .filter(Boolean)
-            .filter((w) => {
-              const cached = getCachedName(w);
-              return cached === undefined; // only if not cached
-            });
-
-          // if nothing new to resolve, still populate from cache (if any)
-          if (walletsToResolve.length === 0) {
-            setRows((prev) =>
-              prev.map((x) => {
-                const cached = getCachedName(x.wallet);
-                return cached !== undefined ? { ...x, name: cached } : x;
-              })
-            );
-            return;
-          }
-
-          const resN = await fetch(`${baseUrl}/api/resolve-names-batch`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "application/json",
-            },
-            body: JSON.stringify({ wallets: walletsToResolve }),
-            cache: "no-store",
-          });
-
-          const dataN = await safeJson(resN);
-          const names: Record<string, string | null> = dataN?.names ?? {};
-
-          // store into client TTL cache
-          for (const w of Object.keys(names)) {
-            setCachedName(w, names[w] ?? null);
-          }
+          const n = await resolveName(r.wallet);
 
           if (loadSeq.current !== seq) return;
 
-          // one update
           setRows((prev) =>
-            prev.map((x) => {
-              const cached = getCachedName(x.wallet);
-              return cached !== undefined ? { ...x, name: cached } : x;
-            })
+            prev.map((x) => (x.wallet === r.wallet ? { ...x, name: n } : x))
           );
-        } catch {
-          // ignore - wallets still show
-        }
+        });
       })();
     } catch (e: any) {
       console.error(e);
@@ -179,48 +186,40 @@ export default function LeaderboardPage() {
 
     setMyLoading(true);
     try {
-      const res = await fetch(`${baseUrl}/api/leaderboard`, {
-        method: "GET",
-        headers: { Accept: "application/json" },
-        cache: "no-store",
-      });
+      // ✅ Ask API for "me" rank even if not top100
+      const res = await fetch(
+        `${baseUrl}/api/leaderboard?wallet=${encodeURIComponent(myWallet)}`,
+        {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        }
+      );
 
       const data = await safeJson(res);
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
 
-      const raw: any[] = Array.isArray(data?.rows)
-        ? data.rows
-        : Array.isArray(data)
-        ? data
-        : [];
-
-      const normalized: Row[] = raw.map((r: any, i: number) => ({
-        wallet: String(r.wallet ?? ""),
-        points: Number(r.points ?? 0),
-        streak: Number(r.streak ?? 0),
-        rank: Number(r.rank ?? i + 1),
-        name: typeof r.name === "string" && r.name.trim() ? String(r.name).trim() : null,
-      }));
-
-      const mine = normalized.find((r) => r.wallet && r.wallet === myWallet);
-
-      if (!mine) {
-        setMyRow({
-          wallet: myWallet,
-          points: 0,
-          streak: 0,
-          rank: undefined,
-          name: null,
-        });
+      const me = data?.me as any;
+      if (!me?.wallet) {
+        setMyRow(null);
         return;
       }
 
-      // use cache if available
-      const cached = getCachedName(mine.wallet);
-      const n = cached !== undefined ? cached : mine.name ?? null;
-      if (cached === undefined) setCachedName(mine.wallet, n);
+      // Use DB-provided name if present, else resolve
+      let displayName: string | null =
+        (typeof me?.name === "string" ? String(me.name).trim() : null) || null;
 
-      setMyRow({ ...mine, name: n });
+      if (!displayName) {
+        displayName = await resolveName(me.wallet);
+      }
+
+      setMyRow({
+        wallet: String(me.wallet),
+        points: Number(me.points ?? 0),
+        streak: Number(me.streak ?? 0),
+        rank: Number(me.rank ?? undefined),
+        name: displayName,
+      });
     } catch {
       setMyRow(null);
     } finally {
@@ -420,7 +419,7 @@ export default function LeaderboardPage() {
               >
                 <div style={styles.colRank}>
                   <span style={styles.rankPill}>
-                    {myRow.rank ? myRow.rank : "—"}
+                    {typeof myRow.rank === "number" ? myRow.rank : "—"}
                   </span>
                 </div>
 
@@ -662,19 +661,15 @@ const styles: Record<string, React.CSSProperties> = {
   },
   userLine: { display: "flex", alignItems: "center", gap: 10, minWidth: 0 },
   userName: {
-  fontWeight: 900,
-  letterSpacing: 0.2,
-  display: "block",
-  minWidth: 0,
-  maxWidth: "100%",
-
-  // ✅ SHOW FULL .skr NAME WITHOUT BREAKING LAYOUT
-  whiteSpace: "normal",
-  overflowWrap: "anywhere",
-  wordBreak: "break-word",
-  lineHeight: 1.1,
-  maxHeight: "2.2em", // max 2 lines
-},
+    fontWeight: 900,
+    letterSpacing: 0.2,
+    display: "block",
+    minWidth: 0,
+    maxWidth: "100%",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
   skrGlow: {
     color: "rgba(0,255,163,0.95)",
     textShadow: "0 0 12px rgba(0,255,163,0.45)",
