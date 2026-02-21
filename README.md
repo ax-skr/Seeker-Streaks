@@ -24,19 +24,26 @@ The system emphasizes long-term consistency over short-term activity, creating a
 
 **Seeker Streaks — Whitepaper v1**
 
-The whitepaper outlines the philosophy, mechanics, and long-term vision behind the Seeker Streaks commitment protocol — introducing **Proof of Consistency** as a new primitive for digital ecosystems.
+The Commitment Layer for the Seeker Ecosystem
 
-It explains:
+The whitepaper outlines the philosophy, mechanics, and long-term roadmap behind Seeker Streaks — defining how consistency can become a visible social and on-chain signal.
 
-* The commitment layer concept
-* Streaks as a signal of reliability
-* The fairness model
-* Identity through persistence
-* The Founders Era framework
+Key concepts:
 
-Read the full whitepaper:
+Commitment as status
 
-👉 **https://seekerstreaks.com/whitepaper**
+Daily ritual mechanics
+
+Streak-based identity formation
+
+Fairness and protection model
+
+Founders Era framework
+
+Future reputation layer potential
+
+👉 Read the full whitepaper:
+https://seekerstreaks.com/whitepaper
 
 ---
 
