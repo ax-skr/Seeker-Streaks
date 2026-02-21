@@ -96,6 +96,14 @@ Demo video showcasing app functionality:
 
 ---
 
+## 🎤 Pitch Deck
+
+Seeker Streaks — Behavioral Identity Layer for Solana Mobile
+
+👉 https://drive.google.com/file/d/1B6wd2_llCDNOtyPWadODjrWvCVOgTIx4/view
+
+---
+
 ## 🧪 Running Locally
 
 npm install
