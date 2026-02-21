@@ -22,27 +22,21 @@ The system emphasizes long-term consistency over short-term activity, creating a
 
 [![Whitepaper](https://img.shields.io/badge/Whitepaper-v1-8b5cf6)](https://seekerstreaks.com/whitepaper)
 
-**Seeker Streaks — Whitepaper v1**
-
-The Commitment Layer for the Seeker Ecosystem
+**Seeker Streaks — Whitepaper v1**  
+*The Commitment Layer for the Seeker Ecosystem*
 
 The whitepaper outlines the philosophy, mechanics, and long-term roadmap behind Seeker Streaks — defining how consistency can become a visible social and on-chain signal.
 
-Key concepts:
+### Key concepts:
 
-Commitment as status
+- Commitment as status  
+- Daily ritual mechanics  
+- Streak-based identity formation  
+- Fairness and protection model  
+- Founders Era framework  
+- Future reputation layer potential  
 
-Daily ritual mechanics
-
-Streak-based identity formation
-
-Fairness and protection model
-
-Founders Era framework
-
-Future reputation layer potential
-
-👉 Read the full whitepaper:
+👉 **Read the full whitepaper:**  
 https://seekerstreaks.com/whitepaper
 
 ---
@@ -118,7 +112,7 @@ http://localhost:3000
 
 Submitted to:
 
-**MONOLITH — Solana Mobile Hackathon**
+**MONOLITH — Solana Mobile Hackathon by Solana Mobile × RadiantsDAO**
 
 Track: Mobile
 
