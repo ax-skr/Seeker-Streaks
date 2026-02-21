@@ -18,6 +18,34 @@ The system emphasizes long-term consistency over short-term activity, creating a
 
 ---
 
+## 📘 Whitepaper
+
+[![Whitepaper](https://img.shields.io/badge/Whitepaper-v1-8b5cf6)](https://seekerstreaks.com/whitepaper)
+
+**Seeker Streaks — Whitepaper v1**
+
+The whitepaper outlines the philosophy, mechanics, and long-term vision behind the Seeker Streaks commitment protocol — introducing **Proof of Consistency** as a new primitive for digital ecosystems.
+
+It explains:
+
+* The commitment layer concept
+* Streaks as a signal of reliability
+* The fairness model
+* Identity through persistence
+* The Founders Era framework
+
+Read the full whitepaper:
+
+👉 **https://seekerstreaks.com/whitepaper**
+
+---
+
+Consistency becomes visible.
+Consistency becomes scarce.
+**Consistency becomes status.**
+
+---
+
 ## 📱 Features
 
 - 🔐 Secure wallet authentication
