@@ -48,13 +48,13 @@ export default function LeaderboardPage() {
 
   const myWallet = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
 
-  // cache with TTL:
-  // - real names: 24h
-  // - null: 5 min (so new .skr can appear later without hard refresh)
+  // Local in-memory cache to avoid re-resolving during same page session
+  // (backend now also caches with 24h TTL, but this makes UI extra safe)
   const nameCache = useRef<Map<string, CacheEntry>>(new Map());
 
-  // used to cancel stale background name-resolves on refresh/navigation
+  // Prevent duplicate in-flight batch resolves + cancel stale background tasks
   const loadSeq = useRef(0);
+  const inflightWallets = useRef<Set<string>>(new Set());
 
   function getCachedName(wallet: string): string | null | undefined {
     const entry = nameCache.current.get(wallet);
@@ -67,56 +67,82 @@ export default function LeaderboardPage() {
   }
 
   function setCachedName(wallet: string, value: string | null) {
-    const ttlMs = value ? 24 * 60 * 60 * 1000 : 5 * 60 * 1000;
+    // If name exists: cache 24h. If null: cache 24h as well (backend TTL should handle "none" too)
+    // Keeping it 24h prevents client from re-hammering even if user refreshes quickly.
+    const ttlMs = 24 * 60 * 60 * 1000;
     nameCache.current.set(wallet, { value, expiresAt: Date.now() + ttlMs });
   }
 
-  async function resolveName(wallet: string): Promise<string | null> {
-    if (!wallet) return null;
-
-    const cached = getCachedName(wallet);
-    if (cached !== undefined) return cached;
-
-    try {
-      const res = await fetch(
-        `${baseUrl}/api/resolve-name?wallet=${encodeURIComponent(wallet)}`,
-        {
-          method: "GET",
-          headers: { Accept: "application/json" },
-          cache: "no-store",
-        }
-      );
-
-      const data = await safeJson(res);
-      const name =
-        (data?.name ??
-          data?.skr ??
-          data?.username ??
-          data?.displayName ??
-          null) as string | null;
-
-      const cleaned = name && String(name).trim() ? String(name).trim() : null;
-      setCachedName(wallet, cleaned);
-      return cleaned;
-    } catch {
-      setCachedName(wallet, null);
-      return null;
-    }
+  function normalizeName(v: unknown): string | null {
+    const s = typeof v === "string" ? v.trim() : "";
+    if (!s) return null;
+    return s.toLowerCase().endsWith(".skr") ? s : null;
   }
 
-  async function runWithConcurrency<T>(
-    items: T[],
-    concurrency: number,
-    worker: (item: T) => Promise<void>
-  ) {
-    let i = 0;
-    const runners = new Array(Math.max(1, concurrency)).fill(0).map(async () => {
-      while (i < items.length) {
-        const idx = i++;
-        await worker(items[idx]);
+  async function resolveNamesBatch(wallets: string[], seq: number) {
+    const unique = Array.from(new Set(wallets)).filter(Boolean);
+
+    // filter out ones we already have cached or are already in-flight
+    const toFetch: string[] = [];
+    for (const w of unique) {
+      if (getCachedName(w) !== undefined) continue;
+      if (inflightWallets.current.has(w)) continue;
+      inflightWallets.current.add(w);
+      toFetch.push(w);
+    }
+
+    if (toFetch.length === 0) return;
+
+    try {
+      const res = await fetch(`${baseUrl}/api/resolve-name-batch`, {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ wallets: toFetch }),
+      });
+
+      const data = await safeJson(res);
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+
+      const names: Record<string, string | null> =
+        (data?.names && typeof data.names === "object" ? data.names : {}) as any;
+
+      // Cache results
+      for (const w of toFetch) {
+        const n = normalizeName(names?.[w]);
+        setCachedName(w, n);
       }
-    });
-    await Promise.all(runners);
+
+      // If a new load happened, don't apply
+      if (loadSeq.current !== seq) return;
+
+      // Apply to rows + myRow if present
+      setRows((prev) =>
+        prev.map((r) => {
+          const existing = normalizeName(r.name);
+          if (existing) return r;
+
+          const cached = getCachedName(r.wallet);
+          if (cached === undefined) return r;
+          return { ...r, name: cached };
+        })
+      );
+
+      setMyRow((prev) => {
+        if (!prev) return prev;
+        const existing = normalizeName(prev.name);
+        if (existing) return prev;
+        const cached = getCachedName(prev.wallet);
+        if (cached === undefined) return prev;
+        return { ...prev, name: cached };
+      });
+    } catch (e) {
+      // IMPORTANT: no retry loops here. If resolver is rate-limited, we just skip.
+      // Backend TTL + next refresh will handle it.
+      console.warn("resolve-name-batch failed:", e);
+    } finally {
+      for (const w of toFetch) inflightWallets.current.delete(w);
+    }
   }
 
   async function load() {
@@ -141,13 +167,21 @@ export default function LeaderboardPage() {
         ? data
         : [];
 
-      const normalized: Row[] = raw.map((r: any, i: number) => ({
-        wallet: String(r.wallet ?? ""),
-        points: Number(r.points ?? 0),
-        streak: Number(r.streak ?? 0),
-        rank: Number(r.rank ?? i + 1),
-        name: (typeof r.name === "string" ? r.name : null) as string | null,
-      }));
+      const normalized: Row[] = raw.map((r: any, i: number) => {
+        const wallet = String(r.wallet ?? "");
+        const dbName = normalizeName(r.name);
+
+        // Prime local cache with DB names so we NEVER resolve them again client-side
+        if (wallet && dbName) setCachedName(wallet, dbName);
+
+        return {
+          wallet,
+          points: Number(r.points ?? 0),
+          streak: Number(r.streak ?? 0),
+          rank: Number(r.rank ?? i + 1),
+          name: dbName,
+        };
+      });
 
       const top100 = normalized.slice(0, 100);
 
@@ -155,21 +189,14 @@ export default function LeaderboardPage() {
       setRows(top100);
       setLoading(false);
 
-      // background name fill (only for ones without name already)
-      void (async () => {
-        await runWithConcurrency(top100, 6, async (r) => {
-          if (loadSeq.current !== seq) return;
-          if (r.name && r.name.toLowerCase().endsWith(".skr")) return;
+      // Background: resolve ONLY wallets missing name (ONE batch call)
+      const missingWallets = top100
+        .filter((r) => !normalizeName(r.name) && r.wallet)
+        .map((r) => r.wallet);
 
-          const n = await resolveName(r.wallet);
-
-          if (loadSeq.current !== seq) return;
-
-          setRows((prev) =>
-            prev.map((x) => (x.wallet === r.wallet ? { ...x, name: n } : x))
-          );
-        });
-      })();
+      if (missingWallets.length > 0) {
+        void resolveNamesBatch(missingWallets, seq);
+      }
     } catch (e: any) {
       console.error(e);
       setErr(e?.message || "Failed to load leaderboard");
@@ -185,8 +212,9 @@ export default function LeaderboardPage() {
     }
 
     setMyLoading(true);
+    const seq = loadSeq.current;
+
     try {
-      // ✅ Ask API for "me" rank even if not top100
       const res = await fetch(
         `${baseUrl}/api/leaderboard?wallet=${encodeURIComponent(myWallet)}`,
         {
@@ -205,21 +233,23 @@ export default function LeaderboardPage() {
         return;
       }
 
-      // Use DB-provided name if present, else resolve
-      let displayName: string | null =
-        (typeof me?.name === "string" ? String(me.name).trim() : null) || null;
+      const wallet = String(me.wallet);
+      const dbName = normalizeName(me?.name);
 
-      if (!displayName) {
-        displayName = await resolveName(me.wallet);
-      }
+      if (wallet && dbName) setCachedName(wallet, dbName);
 
       setMyRow({
-        wallet: String(me.wallet),
+        wallet,
         points: Number(me.points ?? 0),
         streak: Number(me.streak ?? 0),
-        rank: Number(me.rank ?? undefined),
-        name: displayName,
+        rank: typeof me.rank === "number" ? Number(me.rank) : undefined,
+        name: dbName,
       });
+
+      // If my name missing, resolve via batch (single wallet) — no retries
+      if (!dbName && wallet) {
+        void resolveNamesBatch([wallet], seq);
+      }
     } catch {
       setMyRow(null);
     } finally {
@@ -228,11 +258,13 @@ export default function LeaderboardPage() {
   }
 
   useEffect(() => {
+    if (!baseUrl) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseUrl]);
 
   useEffect(() => {
+    if (!baseUrl) return;
     loadMyRank();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myWallet, baseUrl]);
@@ -321,7 +353,8 @@ export default function LeaderboardPage() {
             <div style={styles.tableBody}>
               {rows.map((r, idx) => {
                 const display =
-                  (r.name && r.name.trim()) || shortWallet(r.wallet);
+                  (normalizeName(r.name) || getCachedName(r.wallet) || "").trim() ||
+                  shortWallet(r.wallet);
 
                 const showSkr = display.toLowerCase().endsWith(".skr");
 
@@ -339,7 +372,6 @@ export default function LeaderboardPage() {
                       <div style={styles.userLine}>
                         <span
                           className="lbUserName"
-                          // ✅ show .skr names up to 2 lines; wallets stay 1 line
                           style={showSkr ? styles.userName : styles.userNameSingle}
                           title={display}
                         >
@@ -428,13 +460,14 @@ export default function LeaderboardPage() {
                   <div style={styles.userLine}>
                     {(() => {
                       const display =
-                        (myRow.name && myRow.name.trim()) ||
-                        shortWallet(myRow.wallet);
+                        (normalizeName(myRow.name) ||
+                          getCachedName(myRow.wallet) ||
+                          "").trim() || shortWallet(myRow.wallet);
+
                       const showSkr = display.toLowerCase().endsWith(".skr");
                       return (
                         <span
                           className="lbUserName"
-                          // ✅ same fix for "Your position"
                           style={showSkr ? styles.userName : styles.userNameSingle}
                           title={display}
                         >
@@ -663,7 +696,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   userLine: { display: "flex", alignItems: "center", gap: 10, minWidth: 0 },
 
-  // ✅ NEW: 2-line clamp for long .skr usernames (no scroll, no layout break)
+  // 2-line clamp for long .skr usernames
   userName: {
     fontWeight: 900,
     letterSpacing: 0.2,
@@ -676,7 +709,7 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.15,
   },
 
-  // ✅ NEW: keep non-.skr short-wallet style as before (single line)
+  // Keep non-.skr (wallet short) single line
   userNameSingle: {
     fontWeight: 900,
     letterSpacing: 0.2,

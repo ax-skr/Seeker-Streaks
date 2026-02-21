@@ -16,14 +16,19 @@ const parser = new TldParser(connection);
 // Legacy sentinel some older code stored in users.skr_name
 const LEGACY_NONE = "__NONE__";
 
+// 24h TTL: do not resolve on-chain more than once per day per wallet
+const TTL_MS = 24 * 60 * 60 * 1000;
+
 // Cache headers tuned by result
 function withCacheHeaders(res: NextResponse, nameFound: boolean) {
   if (nameFound) {
+    // If name exists, cache for 24h at CDN
     res.headers.set(
       "Cache-Control",
       "public, max-age=0, s-maxage=86400, stale-while-revalidate=604800"
     );
   } else {
+    // If name not found, cache short at CDN
     res.headers.set(
       "Cache-Control",
       "public, max-age=0, s-maxage=300, stale-while-revalidate=3600"
@@ -106,24 +111,33 @@ export async function POST(req: NextRequest) {
   return handle(req);
 }
 
+function isValidSkrName(v: string) {
+  const s = (v || "").trim();
+  return s.length > 0 && s !== LEGACY_NONE && s.toLowerCase().endsWith(".skr");
+}
+
+function parseTsMs(v: unknown): number {
+  const s = typeof v === "string" ? v : "";
+  if (!s) return 0;
+  const t = new Date(s).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
 async function handle(req: NextRequest) {
   try {
     const wallet = await readWalletFromReq(req);
 
     if (!wallet) {
       return withCacheHeaders(
-        NextResponse.json(
-          { ok: false, error: "wallet required" },
-          { status: 400 }
-        ),
+        NextResponse.json({ ok: false, error: "wallet required" }, { status: 400 }),
         false
       );
     }
 
-    // 1) DB cache check
+    // 1) DB cache check (includes last resolve attempt time)
     const { data: user, error: selErr } = await supabaseAdmin
       .from("users")
-      .select("wallet, skr_name")
+      .select("wallet, skr_name, skr_name_updated_at")
       .eq("wallet", wallet)
       .maybeSingle();
 
@@ -138,23 +152,18 @@ async function handle(req: NextRequest) {
     }
 
     const cachedRaw = user?.skr_name ? String(user.skr_name).trim() : "";
+    const cachedValid = isValidSkrName(cachedRaw);
 
-    // ✅ If we see legacy sentinel in DB, auto-clean it to NULL (best-effort)
+    // clean legacy sentinel
     if (user?.wallet && cachedRaw === LEGACY_NONE) {
-      // Fire-and-forget: don't block response (no .then/.catch -> no TS underline)
-      void supabaseAdmin
-        .from("users")
-        .update({ skr_name: null })
-        .eq("wallet", wallet);
+      void supabaseAdmin.from("users").update({ skr_name: null }).eq("wallet", wallet);
     }
 
-    // ✅ Trust only real .skr values
-    const cachedLooksValid =
-      !!cachedRaw &&
-      cachedRaw !== LEGACY_NONE &&
-      cachedRaw.toLowerCase().endsWith(".skr");
+    const lastCheckMs = parseTsMs((user as any)?.skr_name_updated_at);
+    const isFresh = lastCheckMs > 0 && Date.now() - lastCheckMs < TTL_MS;
 
-    if (cachedLooksValid) {
+    // ✅ If valid name and fresh → return immediately
+    if (cachedValid && isFresh) {
       return withCacheHeaders(
         NextResponse.json({
           ok: true,
@@ -162,26 +171,44 @@ async function handle(req: NextRequest) {
           name: cachedRaw,
           cached: true,
           source: "db_cache",
+          fresh: true,
         }),
         true
       );
     }
 
+    // ✅ If NO name but we checked within 24h → do NOT hit chain again
+    if (!cachedValid && isFresh) {
+      return withCacheHeaders(
+        NextResponse.json({
+          ok: true,
+          wallet,
+          name: null,
+          cached: true,
+          source: "db_cache_none",
+          fresh: true,
+          note: "Checked within last 24h; skipping onchain resolve.",
+        }),
+        false
+      );
+    }
+
     // 2) Resolve from chain (slow path)
     const resolved = await resolveNameForWallet(wallet);
-    const cleaned =
-      resolved && String(resolved).trim() ? String(resolved).trim() : null;
+    const cleaned = resolved && String(resolved).trim() ? String(resolved).trim() : null;
+    const finalName = cleaned && cleaned.toLowerCase().endsWith(".skr") ? cleaned : null;
 
-    const finalName =
-      cleaned && cleaned.toLowerCase().endsWith(".skr") ? cleaned : null;
-
-    // 3) Cache ONLY real .skr names (never write __NONE__)
-    if (user?.wallet && finalName) {
-      await supabaseAdmin
-        .from("users")
-        .update({ skr_name: finalName })
-        .eq("wallet", wallet);
-    }
+    // 3) Write back attempt time ALWAYS (+ name if found)
+    await supabaseAdmin
+      .from("users")
+      .upsert(
+        {
+          wallet,
+          skr_name: finalName,
+          skr_name_updated_at: new Date().toISOString(),
+        },
+        { onConflict: "wallet" }
+      );
 
     return withCacheHeaders(
       NextResponse.json({

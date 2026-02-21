@@ -13,12 +13,21 @@ const parser = new TldParser(connection);
 
 type Pair = [wallet: string, name: string | null];
 
+const TTL_MS = 24 * 60 * 60 * 1000; // 24h
+
 function cacheShort(res: NextResponse) {
   res.headers.set(
     "Cache-Control",
     "public, max-age=0, s-maxage=30, stale-while-revalidate=120"
   );
   return res;
+}
+
+function parseTsMs(v: unknown): number {
+  const s = typeof v === "string" ? v : "";
+  if (!s) return 0;
+  const t = new Date(s).getTime();
+  return Number.isFinite(t) ? t : 0;
 }
 
 async function resolveMainDomain(wallet: string): Promise<string | null> {
@@ -98,10 +107,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1) Pull cached names from DB in one query
+    // 1) Pull cached names + timestamps from DB in one query
     const { data: cachedRows, error: selErr } = await supabaseAdmin
       .from("users")
-      .select("wallet, skr_name")
+      .select("wallet, skr_name, skr_name_updated_at")
       .in("wallet", wallets);
 
     if (selErr) {
@@ -111,21 +120,28 @@ export async function POST(req: NextRequest) {
     }
 
     const out: Record<string, string | null> = {};
-    const cachedMap = new Map<string, string | null>();
+    const cachedFreshSet = new Set<string>();
 
     for (const r of cachedRows ?? []) {
       const w = String((r as any).wallet ?? "");
-      const nRaw = (r as any).skr_name ? String((r as any).skr_name).trim() : "";
-      const n = nRaw && nRaw.toLowerCase().endsWith(".skr") ? nRaw : null;
+      if (!w) continue;
 
-      if (w) {
-        cachedMap.set(w, n);
-        out[w] = n;
+      const nRaw = (r as any).skr_name ? String((r as any).skr_name).trim() : "";
+      const name =
+        nRaw && nRaw.toLowerCase().endsWith(".skr") ? nRaw : null;
+
+      const tMs = parseTsMs((r as any).skr_name_updated_at);
+      const fresh = tMs > 0 && Date.now() - tMs < TTL_MS;
+
+      // If fresh, we treat it as cached (even if name is null)
+      if (fresh) {
+        cachedFreshSet.add(w);
+        out[w] = name;
       }
     }
 
-    // 2) Resolve missing wallets
-    const missing: string[] = wallets.filter((wallet) => !cachedMap.has(wallet));
+    // 2) Resolve missing/stale wallets only
+    const missing: string[] = wallets.filter((wallet) => !cachedFreshSet.has(wallet));
 
     const resolved: Pair[] = await runWithConcurrency<string, Pair>(
       missing,
@@ -136,10 +152,17 @@ export async function POST(req: NextRequest) {
         const finalName =
           cleaned && cleaned.toLowerCase().endsWith(".skr") ? cleaned : null;
 
-        // Upsert so row exists; store real name or null (no __NONE__)
+        // Upsert and ALWAYS update last-checked timestamp (even if null)
         await supabaseAdmin
           .from("users")
-          .upsert({ wallet, skr_name: finalName }, { onConflict: "wallet" });
+          .upsert(
+            {
+              wallet,
+              skr_name: finalName,
+              skr_name_updated_at: new Date().toISOString(),
+            },
+            { onConflict: "wallet" }
+          );
 
         return [wallet, finalName];
       }
