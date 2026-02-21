@@ -1,12 +1,12 @@
 {
   "name": "Seeker Streaks",
-  "short_name": "Seeker Streaks",
-  "description": "Daily streaks for Solana Seeker users.",
-  "icon": "public/icon.png",
+  "short_name": "Streaks",
+  "description": "The commitment layer for the Solana Seeker ecosystem. Check in daily, build streaks, and turn consistency into status."
+  "icon": "/icon.png",
   "url": "https://seeker-streaks.vercel.app/",
-  "version": "1.0.0",
-  "category": "Utilities",
+  "version": "1.5.1",
+  "category": "Lifestyle",
   "screenshots": [
-    "public/screenshot-1.png"
+    "/screenshot-1.png"
   ]
 }
