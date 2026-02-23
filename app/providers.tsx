@@ -16,15 +16,9 @@ function isSolanaMobileDevice() {
 }
 
 export default function Providers({ children }: { children: React.ReactNode }) {
-  /**
-   * IMPORTANT:
-   * Hard-force a public RPC that does not 403.
-   * Do NOT read NEXT_PUBLIC_SOLANA_RPC_URL until everything works.
-   */
   const endpoint = "https://api.mainnet-beta.solana.com";
 
   useEffect(() => {
-    // This will show in your devtools/console (desktop + mobile remote debugging)
     console.log("[ConnectionProvider] endpoint =", endpoint);
   }, [endpoint]);
 
@@ -72,57 +66,101 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     ];
   }, []);
 
-  // ✅ VISUAL ONLY: hide Phantom + Solflare options in the modal (even after disconnect/re-render)
+  // ✅ VISUAL ONLY (freeze-proof): hide Phantom/Solflare + change title + hide "More options"
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const HIDE = new Set(["phantom", "solflare"]);
+    const HIDE = ["phantom", "solflare"];
+    const TITLE_TEXT = "Connect your Solana Mobile wallet";
 
-    const applyHide = () => {
-      // Buttons
-      const buttons = Array.from(
-        document.querySelectorAll<HTMLButtonElement>(
-          ".wallet-adapter-modal-list .wallet-adapter-button"
-        )
-      );
+    let rafScheduled = false;
+    let observer: MutationObserver | null = null;
 
-      for (const btn of buttons) {
-        const label = (btn.textContent || "").trim().toLowerCase();
-        if (!label) continue;
+    const isModalOpen = () =>
+      !!document.querySelector(".wallet-adapter-modal-wrapper");
 
-        // If the button text contains Phantom/Solflare, hide the whole row
-        for (const name of HIDE) {
-          if (label.includes(name)) {
-            const li = btn.closest("li");
-            if (li) li.style.display = "none";
-            btn.style.display = "none";
+    const applyPatches = () => {
+      // Only run when the modal exists/open, otherwise do nothing.
+      if (!isModalOpen()) return;
+
+      // Disconnect while patching to avoid observer feedback loop.
+      observer?.disconnect();
+
+      try {
+        // 1) Change title text (only if needed)
+        const title = document.querySelector(
+          ".wallet-adapter-modal-title"
+        ) as HTMLElement | null;
+
+        if (title && title.textContent !== TITLE_TEXT) {
+          title.textContent = TITLE_TEXT;
+        }
+
+        // 2) Hide "More options / Less options" toggle
+        const moreBtn = document.querySelector(
+          ".wallet-adapter-modal-list-more"
+        ) as HTMLElement | null;
+
+        if (moreBtn && moreBtn.style.display !== "none") {
+          moreBtn.style.display = "none";
+        }
+
+        // 3) Hide Phantom/Solflare buttons + rows (stable across rerenders)
+        const buttons = Array.from(
+          document.querySelectorAll<HTMLButtonElement>(
+            ".wallet-adapter-modal-list .wallet-adapter-button"
+          )
+        );
+
+        for (const btn of buttons) {
+          const label = (btn.textContent || "").toLowerCase();
+          if (!label) continue;
+
+          if (HIDE.some((name) => label.includes(name))) {
+            const li = btn.closest("li") as HTMLElement | null;
+            if (li && li.style.display !== "none") li.style.display = "none";
+            if (btn.style.display !== "none") btn.style.display = "none";
           }
         }
-      }
 
-      // Some versions render list items differently; also scan li text
-      const items = Array.from(
-        document.querySelectorAll<HTMLLIElement>(".wallet-adapter-modal-list li")
-      );
-
-      for (const li of items) {
-        const t = (li.textContent || "").trim().toLowerCase();
-        for (const name of HIDE) {
-          if (t.includes(name)) {
-            li.style.display = "none";
+        // 4) Hide extra list sections if they appear
+        const lists = Array.from(
+          document.querySelectorAll<HTMLElement>(".wallet-adapter-modal-list")
+        );
+        if (lists.length > 1) {
+          for (let i = 1; i < lists.length; i++) {
+            if (lists[i].style.display !== "none") lists[i].style.display = "none";
           }
         }
+      } finally {
+        // Reconnect observer after patching
+        observer?.observe(document.body, { childList: true, subtree: true });
       }
     };
 
-    // Run once immediately
-    applyHide();
+    const schedule = () => {
+      if (rafScheduled) return;
+      rafScheduled = true;
+      requestAnimationFrame(() => {
+        rafScheduled = false;
+        applyPatches();
+      });
+    };
 
-    // Observe modal changes (disconnect/refresh causes rerenders)
-    const obs = new MutationObserver(() => applyHide());
-    obs.observe(document.body, { childList: true, subtree: true });
+    // Initial run
+    schedule();
 
-    return () => obs.disconnect();
+    observer = new MutationObserver(() => {
+      // Only schedule patches when modal is open/exists (prevents background work).
+      if (isModalOpen()) schedule();
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      observer?.disconnect();
+      observer = null;
+    };
   }, []);
 
   return (
