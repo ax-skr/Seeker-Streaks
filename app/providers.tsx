@@ -16,15 +16,9 @@ function isSolanaMobileDevice() {
 }
 
 export default function Providers({ children }: { children: React.ReactNode }) {
-  /**
-   * IMPORTANT:
-   * Hard-force a public RPC that does not 403.
-   * Do NOT read NEXT_PUBLIC_SOLANA_RPC_URL until everything works.
-   */
   const endpoint = "https://api.mainnet-beta.solana.com";
 
   useEffect(() => {
-    // This will show in your devtools/console (desktop + mobile remote debugging)
     console.log("[ConnectionProvider] endpoint =", endpoint);
   }, [endpoint]);
 
@@ -72,14 +66,38 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     ];
   }, []);
 
-  // ✅ VISUAL ONLY: hide Phantom + Solflare options in the modal (even after disconnect/re-render)
+  // ⭐ VISUAL-ONLY PATCHES FOR WALLET MODAL
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const HIDE = new Set(["phantom", "solflare"]);
 
-    const applyHide = () => {
-      // Buttons
+    const applyPatches = () => {
+      /* ---------------------------
+         1) CHANGE TITLE TEXT
+      ----------------------------*/
+      const title = document.querySelector(
+        ".wallet-adapter-modal-title"
+      ) as HTMLElement | null;
+
+      if (title) {
+        title.textContent = "Connect your Solana Mobile wallet";
+      }
+
+      /* ---------------------------
+         2) HIDE MORE OPTIONS BUTTON
+      ----------------------------*/
+      const moreBtn = document.querySelector(
+        ".wallet-adapter-modal-list-more"
+      ) as HTMLElement | null;
+
+      if (moreBtn) {
+        moreBtn.style.display = "none";
+      }
+
+      /* ---------------------------
+         3) HIDE PHANTOM + SOLFLARE
+      ----------------------------*/
       const buttons = Array.from(
         document.querySelectorAll<HTMLButtonElement>(
           ".wallet-adapter-modal-list .wallet-adapter-button"
@@ -87,10 +105,8 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       );
 
       for (const btn of buttons) {
-        const label = (btn.textContent || "").trim().toLowerCase();
-        if (!label) continue;
+        const label = (btn.textContent || "").toLowerCase();
 
-        // If the button text contains Phantom/Solflare, hide the whole row
         for (const name of HIDE) {
           if (label.includes(name)) {
             const li = btn.closest("li");
@@ -100,26 +116,21 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Some versions render list items differently; also scan li text
-      const items = Array.from(
-        document.querySelectorAll<HTMLLIElement>(".wallet-adapter-modal-list li")
+      /* ---------------------------
+         4) HIDE EXTRA WALLET SECTION
+      ----------------------------*/
+      const lists = document.querySelectorAll(
+        ".wallet-adapter-modal-list"
       );
 
-      for (const li of items) {
-        const t = (li.textContent || "").trim().toLowerCase();
-        for (const name of HIDE) {
-          if (t.includes(name)) {
-            li.style.display = "none";
-          }
-        }
+      if (lists.length > 1) {
+        (lists[1] as HTMLElement).style.display = "none";
       }
     };
 
-    // Run once immediately
-    applyHide();
+    applyPatches();
 
-    // Observe modal changes (disconnect/refresh causes rerenders)
-    const obs = new MutationObserver(() => applyHide());
+    const obs = new MutationObserver(applyPatches);
     obs.observe(document.body, { childList: true, subtree: true });
 
     return () => obs.disconnect();
