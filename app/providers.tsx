@@ -72,6 +72,59 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     ];
   }, []);
 
+  // ✅ VISUAL ONLY: hide Phantom + Solflare options in the modal (even after disconnect/re-render)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const HIDE = new Set(["phantom", "solflare"]);
+
+    const applyHide = () => {
+      // Buttons
+      const buttons = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(
+          ".wallet-adapter-modal-list .wallet-adapter-button"
+        )
+      );
+
+      for (const btn of buttons) {
+        const label = (btn.textContent || "").trim().toLowerCase();
+        if (!label) continue;
+
+        // If the button text contains Phantom/Solflare, hide the whole row
+        for (const name of HIDE) {
+          if (label.includes(name)) {
+            const li = btn.closest("li");
+            if (li) li.style.display = "none";
+            btn.style.display = "none";
+          }
+        }
+      }
+
+      // Some versions render list items differently; also scan li text
+      const items = Array.from(
+        document.querySelectorAll<HTMLLIElement>(".wallet-adapter-modal-list li")
+      );
+
+      for (const li of items) {
+        const t = (li.textContent || "").trim().toLowerCase();
+        for (const name of HIDE) {
+          if (t.includes(name)) {
+            li.style.display = "none";
+          }
+        }
+      }
+    };
+
+    // Run once immediately
+    applyHide();
+
+    // Observe modal changes (disconnect/refresh causes rerenders)
+    const obs = new MutationObserver(() => applyHide());
+    obs.observe(document.body, { childList: true, subtree: true });
+
+    return () => obs.disconnect();
+  }, []);
+
   return (
     <ConnectionProvider endpoint={endpoint}>
       <WalletProvider wallets={wallets} autoConnect>
