@@ -40,10 +40,14 @@ table {
 /* Remove any browser default focus outline weirdness */
 * { box-sizing: border-box; }
 
-/* Hide Phantom + Solflare (covers button-only and li-wrapped lists) */
-.wallet-adapter-modal-list .wallet-adapter-button:nth-child(2),
-.wallet-adapter-modal-list .wallet-adapter-button:nth-child(3),
-.wallet-adapter-modal-list > li:nth-child(2),
-.wallet-adapter-modal-list > li:nth-child(3) {
+/* Hide Phantom + Solflare in the wallet modal (stable) */
+.wallet-adapter-modal-list .wallet-adapter-button[data-wallet-name="Phantom"],
+.wallet-adapter-modal-list .wallet-adapter-button[data-wallet-name="Solflare"] {
+  display: none !important;
+}
+
+/* Some versions put the attribute on the <li> */
+.wallet-adapter-modal-list li[data-wallet-name="Phantom"],
+.wallet-adapter-modal-list li[data-wallet-name="Solflare"] {
   display: none !important;
 }
