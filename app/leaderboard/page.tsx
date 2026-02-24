@@ -271,7 +271,7 @@ export default function LeaderboardPage() {
 
   return (
     <div className="lbShell" style={styles.shell}>
-      <div style={styles.card}>
+      <div style={styles.card} className="lbCard">
         <div style={styles.headerRow}>
           <div>
             <div style={styles.title}>Leaderboard</div>
@@ -375,7 +375,13 @@ export default function LeaderboardPage() {
                       <div style={styles.userLine}>
                         <span
                           className="lbUserName"
-                          style={showSkr ? styles.userName : styles.userNameSingle}
+                          style={
+                            isMe
+                              ? styles.userNameMe
+                              : showSkr
+                              ? styles.userName
+                              : styles.userNameSingle
+                          }
                           title={display}
                         >
                           {display}
@@ -388,18 +394,25 @@ export default function LeaderboardPage() {
                         )}
                       </div>
 
-                      <div className="lbWalletLine" style={styles.walletLine}>
+                      <div
+                        className="lbWalletLine"
+                        style={isMe ? styles.walletLineMe : styles.walletLine}
+                      >
                         {shortWallet(r.wallet)}
                       </div>
                     </div>
 
                     <div style={styles.colPoints}>
-                      <div style={styles.statNum}>{Number(r.points ?? 0)}</div>
+                      <div style={isMe ? styles.statNumMe : styles.statNum}>
+                        {Number(r.points ?? 0)}
+                      </div>
                       <div style={styles.statLabel}>Points</div>
                     </div>
 
                     <div style={styles.colStreak}>
-                      <div style={styles.statNum}>{Number(r.streak ?? 0)}</div>
+                      <div style={isMe ? styles.statNumMe : styles.statNum}>
+                        {Number(r.streak ?? 0)}
+                      </div>
                       <div style={styles.statLabel}>Streak</div>
                     </div>
                   </div>
@@ -513,50 +526,58 @@ export default function LeaderboardPage() {
 
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        /* Premium but lightweight pulse for "YOU" row */
         @keyframes mePulse {
           0%   { box-shadow: 0 0 0 rgba(0,255,163,0.0); }
-          45%  { box-shadow: 0 0 22px rgba(0,255,163,0.18); }
+          50%  { box-shadow: 0 0 46px rgba(0,255,163,0.26); }
           100% { box-shadow: 0 0 0 rgba(0,255,163,0.0); }
         }
 
-        /* ===== Seeker Streaks cosmic background ===== */
+        /* Slow drift / parallax vibe (background-position only: cheap to run) */
+        @keyframes cosmicDrift {
+          0%   { background-position: 0 0, 0 0, 0 0, center, 0 0, 40px 60px, 0 0; }
+          50%  { background-position: 20px -14px, -18px 10px, 12px 16px, center, 14px 10px, 52px 74px, 0 0; }
+          100% { background-position: 0 0, 0 0, 0 0, center, 0 0, 40px 60px, 0 0; }
+        }
+
         .lbShell { position: relative; overflow: hidden; }
+
         .lbShell::before {
           content: "";
           position: absolute;
           inset: 0;
           pointer-events: none;
 
-          /* If you add /public/leaderboard-bg.png it will show; otherwise gradients carry it */
+          /* image + overlays */
           background-image:
-            url("/leaderboard-bg.png"),
-            radial-gradient(1200px 700px at 18% 12%, rgba(0,255,163,0.14), transparent 62%),
-            radial-gradient(1000px 650px at 82% 20%, rgba(120,120,255,0.22), transparent 62%),
-            radial-gradient(900px 520px at 68% 80%, rgba(170, 80, 255, 0.14), transparent 60%),
-            radial-gradient(850px 520px at 20% 86%, rgba(0, 180, 255, 0.12), transparent 60%),
-            radial-gradient(rgba(255,255,255,0.22) 1px, transparent 1px),
-            radial-gradient(rgba(255,255,255,0.14) 1px, transparent 1px),
+            radial-gradient(900px 520px at 18% 22%, rgba(0,255,163,0.18), transparent 62%),
+            radial-gradient(900px 520px at 82% 18%, rgba(120,120,255,0.20), transparent 62%),
+            radial-gradient(900px 520px at 68% 80%, rgba(170, 80, 255, 0.16), transparent 60%),
+            url("/leaderboard-cosmic.png"),
+            radial-gradient(rgba(255,255,255,0.20) 1px, transparent 1px),
+            radial-gradient(rgba(255,255,255,0.12) 1px, transparent 1px),
             linear-gradient(180deg, #04050a 0%, #070816 45%, #04050a 100%);
+
           background-size:
+            auto,
+            auto,
+            auto,
             cover,
-            auto,
-            auto,
-            auto,
-            auto,
             120px 120px,
             220px 220px,
             auto;
+
           background-position:
+            0 0,
+            0 0,
+            0 0,
             center,
-            0 0,
-            0 0,
-            0 0,
-            0 0,
             0 0,
             40px 60px,
             0 0;
+
           background-repeat:
-            no-repeat,
             no-repeat,
             no-repeat,
             no-repeat,
@@ -564,9 +585,16 @@ export default function LeaderboardPage() {
             repeat,
             repeat,
             no-repeat;
-          filter: saturate(1.08);
+
+          filter: saturate(1.12) contrast(1.06);
           opacity: 1;
+
+          animation: cosmicDrift 34s ease-in-out infinite;
+          will-change: background-position;
+          transform: translateZ(0);
         }
+
+        /* subtle grain */
         .lbShell::after {
           content: "";
           position: absolute;
@@ -574,8 +602,13 @@ export default function LeaderboardPage() {
           pointer-events: none;
           background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);
           background-size: 3px 3px;
-          opacity: 0.11;
+          opacity: 0.10;
           mix-blend-mode: overlay;
+        }
+
+        /* Keep the center card crisp against the cosmic edges */
+        .lbCard {
+          box-shadow: 0 22px 80px rgba(0,0,0,0.68);
         }
 
         /* Glass helpers */
@@ -588,7 +621,7 @@ export default function LeaderboardPage() {
           -webkit-backdrop-filter: blur(10px);
         }
 
-        /* Buttons: nicer hover/active */
+        /* Buttons */
         .lbBtn {
           transition: transform 120ms ease, box-shadow 160ms ease, border-color 160ms ease, background 160ms ease;
           will-change: transform;
@@ -605,13 +638,15 @@ export default function LeaderboardPage() {
           box-shadow: 0 12px 30px rgba(0,0,0,0.28);
         }
 
-        /* Connected wallet row "pop out" */
+        /* Connected wallet row: bigger + more premium */
         .lbRowMe {
-          transform: translateY(-2px) scale(1.01);
-          animation: mePulse 1.9s ease-in-out infinite;
+          transform: translateY(-4px) scale(1.035);
+          animation: mePulse 1.7s ease-in-out infinite;
+          z-index: 2;
+          position: relative;
         }
         .lbRowMe:hover {
-          transform: translateY(-3px) scale(1.012);
+          transform: translateY(-6px) scale(1.04);
         }
 
         /* Keep columns from overflowing */
@@ -623,7 +658,15 @@ export default function LeaderboardPage() {
           .lbHead, .lbRow { grid-template-columns: 58px 1fr 74px 74px !important; }
           .lbWrap { overflow-x: hidden !important; }
           .lbRow .lbUserName { font-size: 13px !important; letter-spacing: 0.1px !important; }
+          .lbRowMe .lbUserName { font-size: 14px !important; }
           .lbRow .lbWalletLine { font-size: 11px !important; }
+        }
+
+        /* Respect reduced-motion */
+        @media (prefers-reduced-motion: reduce) {
+          .lbShell::before { animation: none !important; }
+          .lbRowMe { animation: none !important; }
+          .lbBtn, .lbRow { transition: none !important; }
         }
       `}</style>
     </div>
@@ -641,11 +684,12 @@ const styles: Record<string, React.CSSProperties> = {
       'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
   },
 
+  // Darker / blacker main card so the cosmic edges look intentional
   card: {
     width: "min(980px, 100%)",
-    border: "1px solid rgba(255,255,255,0.10)",
+    border: "1px solid rgba(255,255,255,0.12)",
     borderRadius: 20,
-    background: "rgba(10, 12, 22, 0.70)",
+    background: "rgba(6, 7, 12, 0.82)",
     boxShadow: "0 22px 70px rgba(0,0,0,0.62)",
     padding: 18,
     backdropFilter: "blur(12px)",
@@ -797,15 +841,17 @@ const styles: Record<string, React.CSSProperties> = {
       "linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.10))",
   },
 
-  // Connected wallet row pop-out
+  // Connected wallet row pop-out (bigger + stronger glow)
   rowMePop: {
-    borderTop: "1px solid rgba(0,255,163,0.35)",
+    borderTop: "1px solid rgba(0,255,163,0.50)",
+    borderRadius: 16,
+    padding: "14px 12px",
     boxShadow:
-      "inset 0 0 0 1px rgba(0,255,163,0.22), 0 14px 40px rgba(0,0,0,0.40), 0 0 26px rgba(0,255,163,0.16)",
+      "inset 0 0 0 1px rgba(0,255,163,0.28), 0 18px 46px rgba(0,0,0,0.50), 0 0 42px rgba(0,255,163,0.26)",
     background:
-      "radial-gradient(900px 160px at 16% 40%, rgba(0,255,163,0.22), transparent 60%)," +
-      "radial-gradient(700px 180px at 82% 58%, rgba(120,120,255,0.16), transparent 58%)," +
-      "linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.10))",
+      "radial-gradient(900px 180px at 16% 42%, rgba(0,255,163,0.26), transparent 62%)," +
+      "radial-gradient(700px 200px at 82% 58%, rgba(120,120,255,0.18), transparent 60%)," +
+      "linear-gradient(180deg, rgba(0,0,0,0.22), rgba(0,0,0,0.10))",
   },
 
   colRank: { display: "flex", alignItems: "center" },
@@ -843,9 +889,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   rankPillMe: {
-    border: "1px solid rgba(0,255,163,0.44)",
-    background: "rgba(0,255,163,0.10)",
-    boxShadow: "0 0 18px rgba(0,255,163,0.16)",
+    border: "1px solid rgba(0,255,163,0.60)",
+    background: "rgba(0,255,163,0.12)",
+    boxShadow: "0 0 22px rgba(0,255,163,0.22)",
   },
 
   userLine: { display: "flex", alignItems: "center", gap: 10, minWidth: 0 },
@@ -857,7 +903,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: 18,
     padding: "0 8px",
     borderRadius: 999,
-    border: "1px solid rgba(0,255,163,0.40)",
+    border: "1px solid rgba(0,255,163,0.55)",
     background:
       "linear-gradient(90deg, rgba(0,255,163,0.18), rgba(102,102,255,0.10))",
     color: "#EFFFF9",
@@ -865,6 +911,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 900,
     letterSpacing: 0.6,
     textTransform: "uppercase",
+    boxShadow: "0 0 18px rgba(0,255,163,0.22)",
     flex: "0 0 auto",
   },
 
@@ -880,6 +927,20 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.15,
   },
 
+  // Special bigger name for connected wallet row only
+  userNameMe: {
+    fontWeight: 950 as any,
+    letterSpacing: 0.2,
+    display: "block",
+    minWidth: 0,
+    maxWidth: "100%",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    fontSize: 15,
+    lineHeight: 1.15,
+  },
+
   userNameSingle: {
     fontWeight: 900,
     letterSpacing: 0.2,
@@ -892,8 +953,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   walletLine: { fontSize: 12, opacity: 0.72, marginTop: 2 },
+  walletLineMe: { fontSize: 12, opacity: 0.82, marginTop: 2 },
 
   statNum: { fontWeight: 900, fontSize: 16 },
+  statNumMe: { fontWeight: 950 as any, fontSize: 18 },
+
   statLabel: { fontSize: 11, opacity: 0.7, marginTop: 2 },
 
   footerNote: {
