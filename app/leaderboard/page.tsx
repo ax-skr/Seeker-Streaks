@@ -100,7 +100,10 @@ export default function LeaderboardPage() {
     try {
       const res = await fetch(`${baseUrl}/api/resolve-names-batch`, {
         method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
         cache: "no-store",
         body: JSON.stringify({ wallets: toFetch }),
       });
@@ -297,8 +300,8 @@ export default function LeaderboardPage() {
             </div>
 
             <div style={styles.sub}>
-              Ranked by <span style={styles.badge}>longest streak</span>, then total
-              points
+              Ranked by <span style={styles.badge}>longest streak</span>, then
+              total points
             </div>
           </div>
 
@@ -402,7 +405,9 @@ export default function LeaderboardPage() {
               })}
             </div>
 
-            <div style={styles.footerNote}>Only verified and locked in 👀 users show here.</div>
+            <div style={styles.footerNote}>
+              Only verified and locked in 👀 users show here.
+            </div>
           </div>
         )}
 
@@ -445,8 +450,8 @@ export default function LeaderboardPage() {
             ) : myRow ? (
               (() => {
                 const display =
-                  (normalizeName(myRow.name) || getCachedName(myRow.wallet) || "").trim() ||
-                  shortWallet(myRow.wallet);
+                  (normalizeName(myRow.name) || getCachedName(myRow.wallet) || "")
+                    .trim() || shortWallet(myRow.wallet);
 
                 const showSkr = display.toLowerCase().endsWith(".skr");
 
@@ -483,12 +488,16 @@ export default function LeaderboardPage() {
                     </div>
 
                     <div style={styles.colPoints}>
-                      <div style={styles.statNum}>{Number(myRow.points ?? 0)}</div>
+                      <div style={styles.statNum}>
+                        {Number(myRow.points ?? 0)}
+                      </div>
                       <div style={styles.statLabel}>Points</div>
                     </div>
 
                     <div style={styles.colStreak}>
-                      <div style={styles.statNum}>{Number(myRow.streak ?? 0)}</div>
+                      <div style={styles.statNum}>
+                        {Number(myRow.streak ?? 0)}
+                      </div>
                       <div style={styles.statLabel}>Streak</div>
                     </div>
                   </div>
@@ -509,6 +518,13 @@ export default function LeaderboardPage() {
         .lbRow > div:nth-child(2),
         .lbHead > div:nth-child(2) {
           min-width: 0;
+        }
+
+        /* ✅ HARD-KILL any accidental dot added via CSS pseudo-elements */
+        .lbRowSkr .lbUserName::after,
+        .lbRowSkr .lbUserName::before {
+          content: "" !important;
+          display: none !important;
         }
 
         @media (max-width: 520px) {
