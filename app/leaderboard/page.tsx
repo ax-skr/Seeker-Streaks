@@ -545,58 +545,65 @@ export default function LeaderboardPage() {
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-        /* Premium but lightweight pulse for "YOU" row */
+        /* Premium pulse (no layout artifacts) */
         @keyframes mePulse {
-          0%   { box-shadow: 0 0 0 rgba(0,255,163,0.0); }
-          50%  { box-shadow: 0 0 46px rgba(0,255,163,0.26); }
-          100% { box-shadow: 0 0 0 rgba(0,255,163,0.0); }
+          0%   { filter: drop-shadow(0 0 0 rgba(0,255,163,0.0)); }
+          50%  { filter: drop-shadow(0 12px 28px rgba(0,255,163,0.22)); }
+          100% { filter: drop-shadow(0 0 0 rgba(0,255,163,0.0)); }
         }
 
-        /* Slow drift / parallax vibe (background-position only: cheap to run) */
+        /* Slow drift — very cheap (transform only) */
         @keyframes cosmicDrift {
-          0%   { background-position: 0 0, 0 0, 0 0, center, 0 0, 40px 60px, 0 0; }
-          50%  { background-position: 20px -14px, -18px 10px, 12px 16px, center, 14px 10px, 52px 74px, 0 0; }
-          100% { background-position: 0 0, 0 0, 0 0, center, 0 0, 40px 60px, 0 0; }
+          0%   { transform: translate3d(0px, 0px, 0); }
+          50%  { transform: translate3d(14px, -10px, 0); }
+          100% { transform: translate3d(0px, 0px, 0); }
         }
 
-        /* ===== FIX 1: make shell truly full-width + correct layering ===== */
+        /* ===== FIX: correct layering and make background truly full screen ===== */
         .lbShell { position: relative; overflow: hidden; }
         .lbShell::before, .lbShell::after { z-index: 0; }
         .lbCard { position: relative; z-index: 1; }
 
+        /* ===== HD cosmic background (no "zoomed blurry" cover) ===== */
         .lbShell::before {
           content: "";
           position: absolute;
-          inset: 0;
+          inset: -40px; /* bleed so it always fills edges */
           pointer-events: none;
 
-          /* image + overlays */
+          /* If you add /public/leaderboard-cosmic@2x.png, retina looks razor sharp */
           background-image:
-            radial-gradient(900px 520px at 18% 22%, rgba(0,255,163,0.18), transparent 62%),
-            radial-gradient(900px 520px at 82% 18%, rgba(120,120,255,0.20), transparent 62%),
-            radial-gradient(900px 520px at 68% 80%, rgba(170, 80, 255, 0.16), transparent 60%),
-            url("/leaderboard-cosmic.png"),
+            image-set(
+              url("/leaderboard-cosmic.png") 1x,
+              url("/leaderboard-cosmic@2x.png") 2x
+            ),
+            radial-gradient(1100px 700px at 18% 16%, rgba(180, 70, 255, 0.18), transparent 62%),
+            radial-gradient(1000px 620px at 80% 22%, rgba(0, 190, 255, 0.16), transparent 62%),
+            radial-gradient(900px 560px at 68% 82%, rgba(0, 255, 163, 0.14), transparent 60%),
             radial-gradient(rgba(255,255,255,0.20) 1px, transparent 1px),
-            radial-gradient(rgba(255,255,255,0.12) 1px, transparent 1px),
-            linear-gradient(180deg, #04050a 0%, #070816 45%, #04050a 100%);
+            radial-gradient(rgba(255,255,255,0.14) 1px, transparent 1px),
+            radial-gradient(rgba(255,255,255,0.10) 1px, transparent 1px),
+            linear-gradient(180deg, #03040a 0%, #07081a 45%, #03040a 100%);
 
-          /* ===== FIX 2: force the cosmic PNG to cover the full screen ===== */
+          /* KEY: avoid blurry "cover" zoom. Use contain. Gradients keep it HD. */
           background-size:
+            contain,
             auto,
             auto,
             auto,
-            cover,
             120px 120px,
             220px 220px,
+            340px 340px,
             auto;
 
           background-position:
-            0 0,
-            0 0,
-            0 0,
             center,
             0 0,
+            0 0,
+            0 0,
+            0 0,
             40px 60px,
+            80px 120px,
             0 0;
 
           background-repeat:
@@ -606,15 +613,15 @@ export default function LeaderboardPage() {
             no-repeat,
             repeat,
             repeat,
+            repeat,
             no-repeat;
 
-          /* a bit crisper / more HD */
-          filter: saturate(1.06) contrast(1.12) brightness(1.04);
+          filter: saturate(1.12) contrast(1.10);
           opacity: 1;
 
-          animation: cosmicDrift 34s ease-in-out infinite;
-          will-change: background-position;
-          transform: translateZ(0);
+          transform: translate3d(0,0,0);
+          will-change: transform;
+          animation: cosmicDrift 36s ease-in-out infinite;
         }
 
         /* subtle grain */
@@ -629,21 +636,6 @@ export default function LeaderboardPage() {
           mix-blend-mode: overlay;
         }
 
-        /* Keep the center card crisp against the cosmic edges */
-        .lbCard {
-          box-shadow: 0 22px 80px rgba(0,0,0,0.68);
-        }
-
-        /* Glass helpers */
-        .lbGlass {
-          backdrop-filter: blur(10px);
-          -webkit-backdrop-filter: blur(10px);
-        }
-        .lbGlassDanger {
-          backdrop-filter: blur(10px);
-          -webkit-backdrop-filter: blur(10px);
-        }
-
         /* Buttons */
         .lbBtn {
           transition: transform 120ms ease, box-shadow 160ms ease, border-color 160ms ease, background 160ms ease;
@@ -655,51 +647,41 @@ export default function LeaderboardPage() {
         /* Rows */
         .lbRow {
           transition: transform 160ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease;
+          position: relative;
         }
         .lbRow:hover {
           transform: translateY(-1px);
           box-shadow: 0 12px 30px rgba(0,0,0,0.28);
         }
 
-        /* ===== FIX 3: make the connected wallet pop CLEANLY (no scale) ===== */
+        /* ===== CLEAN "YOU" POP (FIX: remove that random left bar) ===== */
         .lbRowMe {
-          transform: translateY(-4px);
+          z-index: 3;
           position: relative;
-          z-index: 2;
-          animation: mePulse 2.2s ease-in-out infinite;
+          transform: translateY(-3px) scale(1.02);
+          animation: mePulse 1.9s ease-in-out infinite;
         }
-        .lbRowMe:hover { transform: translateY(-5px); }
+        .lbRowMe:hover { transform: translateY(-4px) scale(1.02); }
 
-        /* inner frame + outer aura */
+        /* The pop ring + aura (no weird artifacts) */
         .lbRowMe::before {
           content: "";
           position: absolute;
-          inset: 5px;
+          inset: 6px;
           border-radius: 14px;
           pointer-events: none;
           box-shadow:
-            inset 0 0 0 2px rgba(0,255,163,0.40),
-            0 12px 28px rgba(0,0,0,0.42),
+            0 0 0 1px rgba(0,255,163,0.34),
+            0 12px 30px rgba(0,0,0,0.42),
             0 0 34px rgba(0,255,163,0.22);
         }
 
-        /* left accent bar */
-        .lbRowMe::after {
-          content: "";
-          position: absolute;
-          left: 8px;
-          top: 10px;
-          bottom: 10px;
-          width: 4px;
-          border-radius: 999px;
-          background: linear-gradient(
-            180deg,
-            rgba(0,255,163,0.95),
-            rgba(120,120,255,0.70)
-          );
-          opacity: 1;
-          pointer-events: none;
-        }
+        /* IMPORTANT: kill any accidental stripe/bar */
+        .lbRowMe::after { content: none !important; }
+
+        /* Make sure the row itself doesn't clip the ring */
+        .lbWrap { overflow: visible; }
+        .lbRowMe { overflow: visible; }
 
         /* Keep columns from overflowing */
         .lbRow > div:nth-child(2),
@@ -714,7 +696,7 @@ export default function LeaderboardPage() {
           .lbRow .lbWalletLine { font-size: 11px !important; }
         }
 
-        /* Respect reduced-motion */
+        /* Reduced motion */
         @media (prefers-reduced-motion: reduce) {
           .lbShell::before { animation: none !important; }
           .lbRowMe { animation: none !important; }
@@ -727,7 +709,7 @@ export default function LeaderboardPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   shell: {
-    width: "100%", // ✅ FIX: ensure background covers full screen width
+    width: "100%",
     minHeight: "100vh",
     display: "flex",
     justifyContent: "center",
@@ -883,24 +865,24 @@ const styles: Record<string, React.CSSProperties> = {
       "linear-gradient(180deg, rgba(0,0,0,0.16), rgba(0,0,0,0.10))",
   },
 
-  // cosmic green row glow ONLY when display ends with .skr
+  // .skr rows: slightly toned down so it doesn't compete with "YOU"
   rowSkrGlow: {
-    borderTop: "1px solid rgba(0,255,163,0.22)",
+    borderTop: "1px solid rgba(0,255,163,0.18)",
     boxShadow:
-      "inset 0 0 0 1px rgba(0,255,163,0.16), 0 0 20px rgba(0,255,163,0.10)",
+      "inset 0 0 0 1px rgba(0,255,163,0.12), 0 0 14px rgba(0,255,163,0.08)",
     background:
-      "radial-gradient(900px 140px at 12% 50%, rgba(0,255,163,0.18), transparent 60%)," +
-      "radial-gradient(700px 140px at 88% 40%, rgba(0,255,163,0.10), transparent 55%)," +
+      "radial-gradient(900px 140px at 12% 50%, rgba(0,255,163,0.14), transparent 60%)," +
+      "radial-gradient(700px 140px at 88% 40%, rgba(0,255,163,0.08), transparent 55%)," +
       "linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.10))",
   },
 
-  // ✅ FIX: Keep row "me" background strong, but let CSS ::before/::after do the premium frame
+  // "YOU" row base (ring/aura comes from CSS ::before)
   rowMePop: {
-    borderTop: "1px solid rgba(0,255,163,0.55)",
-    boxShadow: "inset 0 0 0 1px rgba(0,255,163,0.18)",
+    borderTop: "1px solid rgba(0,255,163,0.40)",
+    boxShadow: "inset 0 0 0 1px rgba(0,255,163,0.14)",
     background:
-      "radial-gradient(900px 220px at 18% 50%, rgba(0,255,163,0.24), transparent 62%)," +
-      "radial-gradient(900px 220px at 86% 55%, rgba(120,120,255,0.16), transparent 64%)," +
+      "radial-gradient(900px 220px at 18% 50%, rgba(0,255,163,0.22), transparent 62%)," +
+      "radial-gradient(900px 220px at 86% 55%, rgba(120,120,255,0.14), transparent 64%)," +
       "linear-gradient(180deg, rgba(0,0,0,0.22), rgba(0,0,0,0.12))",
   },
 
@@ -977,7 +959,6 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.15,
   },
 
-  // Special bigger name for connected wallet row only
   userNameMe: {
     fontWeight: 950 as any,
     letterSpacing: 0.2,
