@@ -527,18 +527,18 @@ export default function LeaderboardPage() {
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-        /* Premium but lightweight pulse for "YOU" row */
+        /* Clean pulse: brightness only (no blobby shadow) */
         @keyframes mePulse {
-          0%   { box-shadow: 0 0 0 rgba(0,255,163,0.0); }
-          50%  { box-shadow: 0 0 46px rgba(0,255,163,0.26); }
-          100% { box-shadow: 0 0 0 rgba(0,255,163,0.0); }
+          0%   { filter: brightness(1); }
+          50%  { filter: brightness(1.05); }
+          100% { filter: brightness(1); }
         }
 
         /* Slow drift / parallax vibe (background-position only: cheap to run) */
         @keyframes cosmicDrift {
-          0%   { background-position: 0 0, 0 0, 0 0, center, 0 0, 40px 60px, 0 0; }
-          50%  { background-position: 20px -14px, -18px 10px, 12px 16px, center, 14px 10px, 52px 74px, 0 0; }
-          100% { background-position: 0 0, 0 0, 0 0, center, 0 0, 40px 60px, 0 0; }
+          0%   { background-position: 0 0, 0 0, 0 0, center top, 0 0, 40px 60px, 0 0; }
+          50%  { background-position: 20px -14px, -18px 10px, 12px 16px, center top, 14px 10px, 52px 74px, 0 0; }
+          100% { background-position: 0 0, 0 0, 0 0, center top, 0 0, 40px 60px, 0 0; }
         }
 
         .lbShell { position: relative; overflow: hidden; }
@@ -549,7 +549,6 @@ export default function LeaderboardPage() {
           inset: 0;
           pointer-events: none;
 
-          /* image + overlays */
           background-image:
             radial-gradient(900px 520px at 18% 22%, rgba(0,255,163,0.18), transparent 62%),
             radial-gradient(900px 520px at 82% 18%, rgba(120,120,255,0.20), transparent 62%),
@@ -559,11 +558,12 @@ export default function LeaderboardPage() {
             radial-gradient(rgba(255,255,255,0.12) 1px, transparent 1px),
             linear-gradient(180deg, #04050a 0%, #070816 45%, #04050a 100%);
 
+          /* === make image less zoomed + sharper === */
           background-size:
             auto,
             auto,
             auto,
-            cover,
+            min(1400px, 120vw) auto,
             120px 120px,
             220px 220px,
             auto;
@@ -572,7 +572,7 @@ export default function LeaderboardPage() {
             0 0,
             0 0,
             0 0,
-            center,
+            center top,
             0 0,
             40px 60px,
             0 0;
@@ -586,7 +586,8 @@ export default function LeaderboardPage() {
             repeat,
             no-repeat;
 
-          filter: saturate(1.12) contrast(1.06);
+          image-rendering: auto;
+          filter: saturate(1.08) contrast(1.10) brightness(1.03);
           opacity: 1;
 
           animation: cosmicDrift 34s ease-in-out infinite;
@@ -607,9 +608,7 @@ export default function LeaderboardPage() {
         }
 
         /* Keep the center card crisp against the cosmic edges */
-        .lbCard {
-          box-shadow: 0 22px 80px rgba(0,0,0,0.68);
-        }
+        .lbCard { box-shadow: 0 22px 80px rgba(0,0,0,0.68); }
 
         /* Glass helpers */
         .lbGlass {
@@ -632,22 +631,49 @@ export default function LeaderboardPage() {
         /* Rows */
         .lbRow {
           transition: transform 160ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease;
+          position: relative;
         }
         .lbRow:hover {
           transform: translateY(-1px);
           box-shadow: 0 12px 30px rgba(0,0,0,0.28);
         }
 
-        /* Connected wallet row: bigger + more premium */
+        /* === Connected wallet row: CLEAN pop (no scale, no spacing changes) === */
         .lbRowMe {
-          transform: translateY(-4px) scale(1.035);
-          animation: mePulse 1.7s ease-in-out infinite;
-          z-index: 2;
+          transform: translateY(-2px);
           position: relative;
+          z-index: 1;
+          animation: mePulse 2.2s ease-in-out infinite;
         }
-        .lbRowMe:hover {
-          transform: translateY(-6px) scale(1.04);
+
+        /* inner frame */
+        .lbRowMe::before {
+          content: "";
+          position: absolute;
+          inset: 6px;
+          border-radius: 14px;
+          pointer-events: none;
+          box-shadow:
+            inset 0 0 0 1px rgba(0,255,163,0.32),
+            0 10px 26px rgba(0,0,0,0.35),
+            0 0 22px rgba(0,255,163,0.16);
         }
+
+        /* left accent bar */
+        .lbRowMe::after {
+          content: "";
+          position: absolute;
+          left: 8px;
+          top: 10px;
+          bottom: 10px;
+          width: 3px;
+          border-radius: 999px;
+          background: linear-gradient(180deg, rgba(0,255,163,0.85), rgba(120,120,255,0.55));
+          opacity: 0.9;
+          pointer-events: none;
+        }
+
+        .lbRowMe:hover { transform: translateY(-3px); }
 
         /* Keep columns from overflowing */
         .lbRow > div:nth-child(2),
@@ -658,7 +684,6 @@ export default function LeaderboardPage() {
           .lbHead, .lbRow { grid-template-columns: 58px 1fr 74px 74px !important; }
           .lbWrap { overflow-x: hidden !important; }
           .lbRow .lbUserName { font-size: 13px !important; letter-spacing: 0.1px !important; }
-          .lbRowMe .lbUserName { font-size: 14px !important; }
           .lbRow .lbWalletLine { font-size: 11px !important; }
         }
 
@@ -684,7 +709,6 @@ const styles: Record<string, React.CSSProperties> = {
       'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
   },
 
-  // Darker / blacker main card so the cosmic edges look intentional
   card: {
     width: "min(980px, 100%)",
     border: "1px solid rgba(255,255,255,0.12)",
@@ -830,7 +854,6 @@ const styles: Record<string, React.CSSProperties> = {
       "linear-gradient(180deg, rgba(0,0,0,0.16), rgba(0,0,0,0.10))",
   },
 
-  // cosmic green row glow ONLY when display ends with .skr
   rowSkrGlow: {
     borderTop: "1px solid rgba(0,255,163,0.22)",
     boxShadow:
@@ -841,17 +864,14 @@ const styles: Record<string, React.CSSProperties> = {
       "linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.10))",
   },
 
-  // Connected wallet row pop-out (bigger + stronger glow)
+  /* IMPORTANT: keep spacing identical to normal rows (no padding/radius here) */
   rowMePop: {
-    borderTop: "1px solid rgba(0,255,163,0.50)",
-    borderRadius: 16,
-    padding: "14px 12px",
-    boxShadow:
-      "inset 0 0 0 1px rgba(0,255,163,0.28), 0 18px 46px rgba(0,0,0,0.50), 0 0 42px rgba(0,255,163,0.26)",
+    borderTop: "1px solid rgba(0,255,163,0.40)",
+    boxShadow: "inset 0 0 0 1px rgba(0,255,163,0.14)",
     background:
-      "radial-gradient(900px 180px at 16% 42%, rgba(0,255,163,0.26), transparent 62%)," +
-      "radial-gradient(700px 200px at 82% 58%, rgba(120,120,255,0.18), transparent 60%)," +
-      "linear-gradient(180deg, rgba(0,0,0,0.22), rgba(0,0,0,0.10))",
+      "radial-gradient(800px 170px at 20% 45%, rgba(0,255,163,0.18), transparent 62%)," +
+      "radial-gradient(700px 160px at 84% 55%, rgba(120,120,255,0.12), transparent 60%)," +
+      "linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.10))",
   },
 
   colRank: { display: "flex", alignItems: "center" },
@@ -903,7 +923,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: 18,
     padding: "0 8px",
     borderRadius: 999,
-    border: "1px solid rgba(0,255,163,0.55)",
+    border: "1px solid rgba(0,255,163,0.60)",
     background:
       "linear-gradient(90deg, rgba(0,255,163,0.18), rgba(102,102,255,0.10))",
     color: "#EFFFF9",
@@ -911,7 +931,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 900,
     letterSpacing: 0.6,
     textTransform: "uppercase",
-    boxShadow: "0 0 18px rgba(0,255,163,0.22)",
+    boxShadow: "0 0 14px rgba(0,255,163,0.20)",
     flex: "0 0 auto",
   },
 
@@ -927,7 +947,6 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.15,
   },
 
-  // Special bigger name for connected wallet row only
   userNameMe: {
     fontWeight: 950 as any,
     letterSpacing: 0.2,
