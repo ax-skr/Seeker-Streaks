@@ -6,15 +6,21 @@ type RowOut = {
   wallet: string;
   points: number;
   streak: number;
-  name: string | null; // from DB only
+  name: string | null; // display name (skr_name preferred, else main_domain)
 };
 
 function looksLikeDomain(v: unknown) {
   const s = typeof v === "string" ? v.trim() : "";
   if (!s) return null;
-  if (!s.includes(".")) return null; // basic sanity: "name.tld"
+  if (!s.includes(".")) return null;
   if (s.length > 80) return null;
   return s;
+}
+
+function looksLikeSkr(v: unknown) {
+  const s = typeof v === "string" ? v.trim() : "";
+  if (!s) return null;
+  return s.toLowerCase().endsWith(".skr") ? s : null;
 }
 
 function cacheHeaders(res: NextResponse) {
@@ -33,7 +39,7 @@ export async function GET(req: NextRequest) {
     // 1) Top 100 (FAST)
     const { data: topRows, error: topErr } = await supabaseAdmin
       .from("users")
-      .select("wallet, points, streak, verified_at, main_domain")
+      .select("wallet, points, streak, verified_at, skr_name, main_domain")
       .not("verified_at", "is", null)
       .order("streak", { ascending: false })
       .order("points", { ascending: false })
@@ -50,15 +56,18 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const rows: RowOut[] = (topRows ?? []).map((u: any, i: number) => ({
-      rank: i + 1,
-      wallet: String(u.wallet ?? ""),
-      points: Number(u.points ?? 0),
-      streak: Number(u.streak ?? 0),
-      name: looksLikeDomain(u.main_domain),
-    }));
+    const rows: RowOut[] = (topRows ?? []).map((u: any, i: number) => {
+      const skr = looksLikeSkr(u.skr_name);
+      const main = looksLikeDomain(u.main_domain);
+      return {
+        rank: i + 1,
+        wallet: String(u.wallet ?? ""),
+        points: Number(u.points ?? 0),
+        streak: Number(u.streak ?? 0),
+        name: skr || main || null,
+      };
+    });
 
-    // If no wallet requested, return only top100
     if (!wallet) {
       return cacheHeaders(NextResponse.json({ ok: true, rows }));
     }
@@ -66,7 +75,7 @@ export async function GET(req: NextRequest) {
     // 2) Fetch "me" row (real points/streak)
     const { data: meRow, error: meErr } = await supabaseAdmin
       .from("users")
-      .select("wallet, points, streak, verified_at, main_domain")
+      .select("wallet, points, streak, verified_at, skr_name, main_domain")
       .eq("wallet", wallet)
       .maybeSingle();
 
@@ -83,7 +92,6 @@ export async function GET(req: NextRequest) {
     const myPoints = Number(meRow.points ?? 0);
 
     // 3) Compute rank without loading all users:
-    // Order = streak DESC, points DESC, wallet ASC
     const { count: higherStreakCount } = await supabaseAdmin
       .from("users")
       .select("wallet", { count: "exact", head: true })
@@ -111,12 +119,15 @@ export async function GET(req: NextRequest) {
       (sameStreakSamePointsLowerWalletCount ?? 0) +
       1;
 
+    const meSkr = looksLikeSkr(meRow.skr_name);
+    const meMain = looksLikeDomain(meRow.main_domain);
+
     const me: RowOut = {
       rank,
       wallet: String(meRow.wallet),
       points: myPoints,
       streak: myStreak,
-      name: looksLikeDomain(meRow.main_domain),
+      name: meSkr || meMain || null,
     };
 
     return cacheHeaders(NextResponse.json({ ok: true, rows, me }));

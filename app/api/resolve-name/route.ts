@@ -37,6 +37,12 @@ function looksLikeDomain(v: unknown) {
   return s;
 }
 
+function looksLikeSkr(v: unknown) {
+  const s = typeof v === "string" ? v.trim() : "";
+  if (!s) return null;
+  return s.toLowerCase().endsWith(".skr") ? s : null;
+}
+
 function parseTsMs(v: unknown): number {
   const s = typeof v === "string" ? v : "";
   if (!s) return 0;
@@ -56,7 +62,7 @@ async function resolveMainDomain(wallet: string): Promise<string | null> {
   }
 }
 
-// Keep your skr fallback (nice-to-have if user owns .skr but hasn't set main)
+// Fallback: find any owned .skr even if not set as main
 async function resolveFallbackSkrDomain(wallet: string): Promise<string | null> {
   try {
     const owner = new PublicKey(wallet);
@@ -84,18 +90,6 @@ async function resolveFallbackSkrDomain(wallet: string): Promise<string | null> 
   } catch {
     return null;
   }
-}
-
-async function resolveNameForWallet(wallet: string): Promise<string | null> {
-  // ✅ Any main domain first (could be .sol, .skr, etc.)
-  const main = await resolveMainDomain(wallet);
-  if (main) return main;
-
-  // ✅ Optional fallback: find owned .skr even if not set as main
-  const fallback = await resolveFallbackSkrDomain(wallet);
-  if (fallback) return fallback;
-
-  return null;
 }
 
 async function readWalletFromReq(req: NextRequest): Promise<string> {
@@ -126,10 +120,10 @@ async function handle(req: NextRequest) {
       );
     }
 
-    // 1) DB cache check (includes last resolve attempt time)
+    // 1) DB cache check (use the newest of the two timestamps)
     const { data: user, error: selErr } = await supabaseAdmin
       .from("users")
-      .select("wallet, main_domain, main_domain_updated_at")
+      .select("wallet, main_domain, main_domain_updated_at, skr_name, skr_name_updated_at")
       .eq("wallet", wallet)
       .maybeSingle();
 
@@ -143,17 +137,25 @@ async function handle(req: NextRequest) {
       );
     }
 
-    const cachedRaw = looksLikeDomain((user as any)?.main_domain);
-    const lastCheckMs = parseTsMs((user as any)?.main_domain_updated_at);
+    const cachedMain = looksLikeDomain((user as any)?.main_domain);
+    const cachedSkr = looksLikeSkr((user as any)?.skr_name);
+
+    const tMain = parseTsMs((user as any)?.main_domain_updated_at);
+    const tSkr = parseTsMs((user as any)?.skr_name_updated_at);
+    const lastCheckMs = Math.max(tMain, tSkr);
+
     const isFresh = lastCheckMs > 0 && Date.now() - lastCheckMs < TTL_MS;
 
-    // ✅ If we have a cached name and it's fresh → return it
-    if (cachedRaw && isFresh) {
+    const cachedDisplay = cachedSkr || cachedMain || null;
+
+    if (cachedDisplay && isFresh) {
       return withCacheHeaders(
         NextResponse.json({
           ok: true,
           wallet,
-          name: cachedRaw,
+          name: cachedDisplay, // display name
+          main_domain: cachedMain,
+          skr_name: cachedSkr,
           cached: true,
           source: "db_cache",
           fresh: true,
@@ -162,13 +164,14 @@ async function handle(req: NextRequest) {
       );
     }
 
-    // ✅ If cached null and fresh → do NOT hit chain again
-    if (!cachedRaw && isFresh) {
+    if (!cachedDisplay && isFresh) {
       return withCacheHeaders(
         NextResponse.json({
           ok: true,
           wallet,
           name: null,
+          main_domain: cachedMain,
+          skr_name: cachedSkr,
           cached: true,
           source: "db_cache_none",
           fresh: true,
@@ -178,34 +181,47 @@ async function handle(req: NextRequest) {
       );
     }
 
-    // 2) Resolve from chain (slow path)
-    const resolved = await resolveNameForWallet(wallet);
-    const cleaned = looksLikeDomain(resolved);
+    // 2) Resolve from chain
+    const resolvedMain = looksLikeDomain(await resolveMainDomain(wallet));
 
-    // 3) Write back attempt time ALWAYS (+ name if found)
+    // If main domain is .skr, that's the skr_name too.
+    // Otherwise fallback to find any owned .skr.
+    const resolvedSkr =
+      (resolvedMain && resolvedMain.toLowerCase().endsWith(".skr") ? resolvedMain : null) ||
+      looksLikeSkr(await resolveFallbackSkrDomain(wallet));
+
+    const nowIso = new Date().toISOString();
+
+    // 3) Write back both (always update timestamps)
     await supabaseAdmin
       .from("users")
       .upsert(
         {
           wallet,
-          main_domain: cleaned,
-          main_domain_updated_at: new Date().toISOString(),
+          main_domain: resolvedMain,
+          main_domain_updated_at: nowIso,
+          skr_name: resolvedSkr,
+          skr_name_updated_at: nowIso,
         },
         { onConflict: "wallet" }
       );
+
+    const display = resolvedSkr || resolvedMain || null;
 
     return withCacheHeaders(
       NextResponse.json({
         ok: true,
         wallet,
-        name: cleaned,
+        name: display,
+        main_domain: resolvedMain,
+        skr_name: resolvedSkr,
         cached: false,
-        source: cleaned ? "onchain" : "none",
-        note: cleaned
+        source: display ? "onchain" : "none",
+        note: display
           ? undefined
           : "No main domain set (and no owned .skr found). User may need to set a main domain in AllDomains.",
       }),
-      !!cleaned
+      !!display
     );
   } catch (e: any) {
     console.error("resolve-name error:", e);

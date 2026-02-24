@@ -31,6 +31,12 @@ function looksLikeDomain(v: unknown) {
   return s;
 }
 
+function looksLikeSkr(v: unknown) {
+  const s = typeof v === "string" ? v.trim() : "";
+  if (!s) return null;
+  return s.toLowerCase().endsWith(".skr") ? s : null;
+}
+
 function parseTsMs(v: unknown): number {
   const s = typeof v === "string" ? v : "";
   if (!s) return 0;
@@ -78,12 +84,6 @@ async function resolveFallbackSkrDomain(wallet: string): Promise<string | null> 
   }
 }
 
-async function resolveName(wallet: string): Promise<string | null> {
-  const main = await resolveMainDomain(wallet);
-  if (main) return main;
-  return resolveFallbackSkrDomain(wallet);
-}
-
 async function runWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
@@ -115,10 +115,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1) Pull cached names + timestamps from DB in one query
+    // 1) Pull cached domains + timestamps in one query
     const { data: cachedRows, error: selErr } = await supabaseAdmin
       .from("users")
-      .select("wallet, main_domain, main_domain_updated_at")
+      .select(
+        "wallet, main_domain, main_domain_updated_at, skr_name, skr_name_updated_at"
+      )
       .in("wallet", wallets);
 
     if (selErr) {
@@ -134,15 +136,18 @@ export async function POST(req: NextRequest) {
       const w = String((r as any).wallet ?? "");
       if (!w) continue;
 
-      const name = looksLikeDomain((r as any).main_domain);
+      const cachedMain = looksLikeDomain((r as any).main_domain);
+      const cachedSkr = looksLikeSkr((r as any).skr_name);
 
-      const tMs = parseTsMs((r as any).main_domain_updated_at);
-      const fresh = tMs > 0 && Date.now() - tMs < TTL_MS;
+      const tMain = parseTsMs((r as any).main_domain_updated_at);
+      const tSkr = parseTsMs((r as any).skr_name_updated_at);
+      const lastCheckMs = Math.max(tMain, tSkr);
 
-      // If fresh, we treat it as cached (even if name is null)
+      const fresh = lastCheckMs > 0 && Date.now() - lastCheckMs < TTL_MS;
+
       if (fresh) {
         cachedFreshSet.add(w);
-        out[w] = name;
+        out[w] = cachedSkr || cachedMain || null; // display name
       }
     }
 
@@ -153,22 +158,29 @@ export async function POST(req: NextRequest) {
       missing,
       6,
       async (wallet): Promise<Pair> => {
-        const name = await resolveName(wallet);
-        const cleaned = looksLikeDomain(name);
+        const resolvedMain = looksLikeDomain(await resolveMainDomain(wallet));
 
-        // Upsert and ALWAYS update last-checked timestamp (even if null)
+        const resolvedSkr =
+          (resolvedMain && resolvedMain.toLowerCase().endsWith(".skr") ? resolvedMain : null) ||
+          looksLikeSkr(await resolveFallbackSkrDomain(wallet));
+
+        const nowIso = new Date().toISOString();
+
         await supabaseAdmin
           .from("users")
           .upsert(
             {
               wallet,
-              main_domain: cleaned,
-              main_domain_updated_at: new Date().toISOString(),
+              main_domain: resolvedMain,
+              main_domain_updated_at: nowIso,
+              skr_name: resolvedSkr,
+              skr_name_updated_at: nowIso,
             },
             { onConflict: "wallet" }
           );
 
-        return [wallet, cleaned];
+        const display = resolvedSkr || resolvedMain || null;
+        return [wallet, display];
       }
     );
 

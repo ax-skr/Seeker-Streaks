@@ -98,8 +98,6 @@ export default function LeaderboardPage() {
     if (toFetch.length === 0) return;
 
     try {
-      // NOTE: your route file name earlier was resolve-name-batch
-      // If your actual endpoint is /api/resolve-names-batch, change this URL accordingly.
       const res = await fetch(`${baseUrl}/api/resolve-names-batch`, {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json" },
@@ -143,7 +141,7 @@ export default function LeaderboardPage() {
         return { ...prev, name: cached };
       });
     } catch (e) {
-      console.warn("resolve-name-batch failed:", e);
+      console.warn("resolve-names-batch failed:", e);
     } finally {
       for (const w of toFetch) inflightWallets.current.delete(w);
     }
@@ -299,8 +297,8 @@ export default function LeaderboardPage() {
             </div>
 
             <div style={styles.sub}>
-              Ranked by <span style={styles.badge}>longest streak</span>, then
-              total points
+              Ranked by <span style={styles.badge}>longest streak</span>, then total
+              points
             </div>
           </div>
 
@@ -383,7 +381,6 @@ export default function LeaderboardPage() {
                           title={display}
                         >
                           {display}
-                          {showSkr && <span style={styles.skrGlow}> •</span>}
                         </span>
                       </div>
                       <div className="lbWalletLine" style={styles.walletLine}>
@@ -405,9 +402,7 @@ export default function LeaderboardPage() {
               })}
             </div>
 
-            <div style={styles.footerNote}>
-              Only verified and locked in 👀 users show here.
-            </div>
+            <div style={styles.footerNote}>Only verified and locked in 👀 users show here.</div>
           </div>
         )}
 
@@ -450,9 +445,8 @@ export default function LeaderboardPage() {
             ) : myRow ? (
               (() => {
                 const display =
-                  (normalizeName(myRow.name) ||
-                    getCachedName(myRow.wallet) ||
-                    "").trim() || shortWallet(myRow.wallet);
+                  (normalizeName(myRow.name) || getCachedName(myRow.wallet) || "").trim() ||
+                  shortWallet(myRow.wallet);
 
                 const showSkr = display.toLowerCase().endsWith(".skr");
 
@@ -481,7 +475,6 @@ export default function LeaderboardPage() {
                           title={display}
                         >
                           {display}
-                          {showSkr && <span style={styles.skrGlow}> •</span>}
                         </span>
                       </div>
                       <div className="lbWalletLine" style={styles.walletLine}>
@@ -675,7 +668,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(0,0,0,0.14)",
   },
 
-  // ✅ NEW: cosmic green row glow ONLY when display ends with .skr
+  // ✅ cosmic green row glow ONLY when display ends with .skr
   rowSkrGlow: {
     borderTop: "1px solid rgba(0,255,163,0.22)",
     boxShadow:
@@ -717,7 +710,6 @@ const styles: Record<string, React.CSSProperties> = {
   },
   userLine: { display: "flex", alignItems: "center", gap: 10, minWidth: 0 },
 
-  // 2-line clamp for long .skr usernames
   userName: {
     fontWeight: 900,
     letterSpacing: 0.2,
@@ -730,7 +722,6 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.15,
   },
 
-  // Keep non-.skr (wallet short) single line
   userNameSingle: {
     fontWeight: 900,
     letterSpacing: 0.2,
@@ -742,11 +733,6 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap",
   },
 
-  skrGlow: {
-    color: "rgba(0,255,163,0.95)",
-    textShadow: "0 0 12px rgba(0,255,163,0.45)",
-    marginLeft: 6,
-  },
   walletLine: { fontSize: 12, opacity: 0.7, marginTop: 2 },
   statNum: { fontWeight: 900, fontSize: 16 },
   statLabel: { fontSize: 11, opacity: 0.7, marginTop: 2 },
