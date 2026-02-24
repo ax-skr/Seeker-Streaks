@@ -49,7 +49,6 @@ export default function LeaderboardPage() {
   const myWallet = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
 
   // Local in-memory cache to avoid re-resolving during same page session
-  // (backend now also caches with 24h TTL, but this makes UI extra safe)
   const nameCache = useRef<Map<string, CacheEntry>>(new Map());
 
   // Prevent duplicate in-flight batch resolves + cancel stale background tasks
@@ -67,26 +66,26 @@ export default function LeaderboardPage() {
   }
 
   function setCachedName(wallet: string, value: string | null) {
-    // Cache 24h for both name and null (backend TTL should handle "none" too)
     const ttlMs = 24 * 60 * 60 * 1000;
     nameCache.current.set(wallet, { value, expiresAt: Date.now() + ttlMs });
   }
 
-  // ✅ MAIN DOMAIN NORMALIZATION (Option B)
+  // MAIN DOMAIN NORMALIZATION (Option B)
   function normalizeName(v: unknown): string | null {
     const s = typeof v === "string" ? v.trim() : "";
     if (!s) return null;
-    // accept any "name.tld"
-    if (!s.includes(".")) return null;
-    // cap length to avoid layout abuse
-    if (s.length > 80) return null;
+    if (!s.includes(".")) return null; // accept any "name.tld"
+    if (s.length > 80) return null; // prevent layout abuse
     return s;
+  }
+
+  function isSkrDisplay(display: string) {
+    return display.toLowerCase().endsWith(".skr");
   }
 
   async function resolveNamesBatch(wallets: string[], seq: number) {
     const unique = Array.from(new Set(wallets)).filter(Boolean);
 
-    // filter out ones we already have cached or are already in-flight
     const toFetch: string[] = [];
     for (const w of unique) {
       if (getCachedName(w) !== undefined) continue;
@@ -100,10 +99,7 @@ export default function LeaderboardPage() {
     try {
       const res = await fetch(`${baseUrl}/api/resolve-names-batch`, {
         method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
         cache: "no-store",
         body: JSON.stringify({ wallets: toFetch }),
       });
@@ -114,16 +110,13 @@ export default function LeaderboardPage() {
       const names: Record<string, string | null> =
         (data?.names && typeof data.names === "object" ? data.names : {}) as any;
 
-      // Cache results (any main domain allowed)
       for (const w of toFetch) {
         const n = normalizeName(names?.[w]);
         setCachedName(w, n);
       }
 
-      // If a new load happened, don't apply
       if (loadSeq.current !== seq) return;
 
-      // Apply to rows + myRow if present
       setRows((prev) =>
         prev.map((r) => {
           const existing = normalizeName(r.name);
@@ -139,6 +132,7 @@ export default function LeaderboardPage() {
         if (!prev) return prev;
         const existing = normalizeName(prev.name);
         if (existing) return prev;
+
         const cached = getCachedName(prev.wallet);
         if (cached === undefined) return prev;
         return { ...prev, name: cached };
@@ -176,7 +170,6 @@ export default function LeaderboardPage() {
         const wallet = String(r.wallet ?? "");
         const dbName = normalizeName(r.name);
 
-        // Prime local cache with DB names so we NEVER resolve them again client-side
         if (wallet && dbName) setCachedName(wallet, dbName);
 
         return {
@@ -190,11 +183,9 @@ export default function LeaderboardPage() {
 
       const top100 = normalized.slice(0, 100);
 
-      // FAST render
       setRows(top100);
       setLoading(false);
 
-      // Background: resolve ONLY wallets missing name (ONE batch call)
       const missingWallets = top100
         .filter((r) => !normalizeName(r.name) && r.wallet)
         .map((r) => r.wallet);
@@ -251,7 +242,6 @@ export default function LeaderboardPage() {
         name: dbName,
       });
 
-      // If my name missing, resolve via batch (single wallet) — no retries
       if (!dbName && wallet) {
         void resolveNamesBatch([wallet], seq);
       }
@@ -280,7 +270,7 @@ export default function LeaderboardPage() {
   }, [rows, myWallet]);
 
   return (
-    <div style={styles.shell}>
+    <div className="lbShell" style={styles.shell}>
       <div style={styles.card}>
         <div style={styles.headerRow}>
           <div>
@@ -300,8 +290,8 @@ export default function LeaderboardPage() {
             </div>
 
             <div style={styles.sub}>
-              Ranked by <span style={styles.badge}>longest streak</span>, then
-              total points
+              Ranked by <span style={styles.badge}>longest streak</span>, then total
+              points
             </div>
           </div>
 
@@ -361,7 +351,7 @@ export default function LeaderboardPage() {
                   (normalizeName(r.name) || getCachedName(r.wallet) || "").trim() ||
                   shortWallet(r.wallet);
 
-                const showSkr = display.toLowerCase().endsWith(".skr");
+                const showSkr = isSkrDisplay(display);
 
                 return (
                   <div
@@ -450,10 +440,11 @@ export default function LeaderboardPage() {
             ) : myRow ? (
               (() => {
                 const display =
-                  (normalizeName(myRow.name) || getCachedName(myRow.wallet) || "")
-                    .trim() || shortWallet(myRow.wallet);
+                  (normalizeName(myRow.name) ||
+                    getCachedName(myRow.wallet) ||
+                    "").trim() || shortWallet(myRow.wallet);
 
-                const showSkr = display.toLowerCase().endsWith(".skr");
+                const showSkr = isSkrDisplay(display);
 
                 return (
                   <div
@@ -488,16 +479,12 @@ export default function LeaderboardPage() {
                     </div>
 
                     <div style={styles.colPoints}>
-                      <div style={styles.statNum}>
-                        {Number(myRow.points ?? 0)}
-                      </div>
+                      <div style={styles.statNum}>{Number(myRow.points ?? 0)}</div>
                       <div style={styles.statLabel}>Points</div>
                     </div>
 
                     <div style={styles.colStreak}>
-                      <div style={styles.statNum}>
-                        {Number(myRow.streak ?? 0)}
-                      </div>
+                      <div style={styles.statNum}>{Number(myRow.streak ?? 0)}</div>
                       <div style={styles.statLabel}>Streak</div>
                     </div>
                   </div>
@@ -515,16 +502,61 @@ export default function LeaderboardPage() {
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
+        /* ===== Starfield / nebula background (Seeker-style) ===== */
+        .lbShell {
+          position: relative;
+          overflow: hidden;
+        }
+        .lbShell::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          background:
+            radial-gradient(1200px 700px at 18% 12%, rgba(0,255,163,0.14), transparent 62%),
+            radial-gradient(1000px 650px at 82% 20%, rgba(102,102,255,0.20), transparent 62%),
+            radial-gradient(900px 520px at 70% 78%, rgba(170, 80, 255, 0.12), transparent 60%),
+            radial-gradient(850px 520px at 20% 85%, rgba(0, 180, 255, 0.10), transparent 60%),
+            /* stars layer 1 */
+            radial-gradient(rgba(255,255,255,0.22) 1px, transparent 1px),
+            /* stars layer 2 */
+            radial-gradient(rgba(255,255,255,0.14) 1px, transparent 1px),
+            linear-gradient(180deg, #04050a 0%, #070816 45%, #04050a 100%);
+          background-size:
+            auto,
+            auto,
+            auto,
+            auto,
+            120px 120px,
+            220px 220px,
+            auto;
+          background-position:
+            0 0,
+            0 0,
+            0 0,
+            0 0,
+            0 0,
+            40px 60px,
+            0 0;
+          filter: saturate(1.08);
+          opacity: 1;
+        }
+        .lbShell::after {
+          /* subtle grain/noise vibe */
+          content: "";
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          background-image:
+            radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);
+          background-size: 3px 3px;
+          opacity: 0.12;
+          mix-blend-mode: overlay;
+        }
+
         .lbRow > div:nth-child(2),
         .lbHead > div:nth-child(2) {
           min-width: 0;
-        }
-
-        /* ✅ HARD-KILL any accidental dot added via CSS pseudo-elements */
-        .lbRowSkr .lbUserName::after,
-        .lbRowSkr .lbUserName::before {
-          content: "" !important;
-          display: none !important;
         }
 
         @media (max-width: 520px) {
@@ -550,10 +582,6 @@ export default function LeaderboardPage() {
 const styles: Record<string, React.CSSProperties> = {
   shell: {
     minHeight: "100vh",
-    background:
-      "radial-gradient(1000px 600px at 15% 10%, rgba(0,255,163,0.14), transparent 60%)," +
-      "radial-gradient(800px 500px at 85% 20%, rgba(102,102,255,0.18), transparent 60%)," +
-      "linear-gradient(180deg, #05060a 0%, #070816 40%, #05060a 100%)",
     display: "flex",
     justifyContent: "center",
     padding: "28px 14px",
@@ -684,11 +712,11 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(0,0,0,0.14)",
   },
 
-  // ✅ cosmic green row glow ONLY when display ends with .skr
+  // cosmic green row glow ONLY when display ends with .skr
   rowSkrGlow: {
     borderTop: "1px solid rgba(0,255,163,0.22)",
     boxShadow:
-      "inset 0 0 0 1px rgba(0,255,163,0.18), 0 0 18px rgba(0,255,163,0.10)",
+      "inset 0 0 0 1px rgba(0,255,163,0.16), 0 0 20px rgba(0,255,163,0.10)",
     background:
       "radial-gradient(900px 140px at 12% 50%, rgba(0,255,163,0.18), transparent 60%)," +
       "radial-gradient(700px 140px at 88% 40%, rgba(0,255,163,0.10), transparent 55%)," +
