@@ -23,6 +23,14 @@ function cacheShort(res: NextResponse) {
   return res;
 }
 
+function looksLikeDomain(v: unknown) {
+  const s = typeof v === "string" ? v.trim() : "";
+  if (!s) return null;
+  if (!s.includes(".")) return null;
+  if (s.length > 80) return null;
+  return s;
+}
+
 function parseTsMs(v: unknown): number {
   const s = typeof v === "string" ? v : "";
   if (!s) return 0;
@@ -110,7 +118,7 @@ export async function POST(req: NextRequest) {
     // 1) Pull cached names + timestamps from DB in one query
     const { data: cachedRows, error: selErr } = await supabaseAdmin
       .from("users")
-      .select("wallet, skr_name, skr_name_updated_at")
+      .select("wallet, main_domain, main_domain_updated_at")
       .in("wallet", wallets);
 
     if (selErr) {
@@ -126,11 +134,9 @@ export async function POST(req: NextRequest) {
       const w = String((r as any).wallet ?? "");
       if (!w) continue;
 
-      const nRaw = (r as any).skr_name ? String((r as any).skr_name).trim() : "";
-      const name =
-        nRaw && nRaw.toLowerCase().endsWith(".skr") ? nRaw : null;
+      const name = looksLikeDomain((r as any).main_domain);
 
-      const tMs = parseTsMs((r as any).skr_name_updated_at);
+      const tMs = parseTsMs((r as any).main_domain_updated_at);
       const fresh = tMs > 0 && Date.now() - tMs < TTL_MS;
 
       // If fresh, we treat it as cached (even if name is null)
@@ -148,9 +154,7 @@ export async function POST(req: NextRequest) {
       6,
       async (wallet): Promise<Pair> => {
         const name = await resolveName(wallet);
-        const cleaned = name && String(name).trim() ? String(name).trim() : null;
-        const finalName =
-          cleaned && cleaned.toLowerCase().endsWith(".skr") ? cleaned : null;
+        const cleaned = looksLikeDomain(name);
 
         // Upsert and ALWAYS update last-checked timestamp (even if null)
         await supabaseAdmin
@@ -158,13 +162,13 @@ export async function POST(req: NextRequest) {
           .upsert(
             {
               wallet,
-              skr_name: finalName,
-              skr_name_updated_at: new Date().toISOString(),
+              main_domain: cleaned,
+              main_domain_updated_at: new Date().toISOString(),
             },
             { onConflict: "wallet" }
           );
 
-        return [wallet, finalName];
+        return [wallet, cleaned];
       }
     );
 

@@ -3,38 +3,45 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { MainDomain, findMainDomain, TldParser } from "@onsol/tldparser";
 
-// Mainnet RPC (AllDomains is mainnet)
 const RPC_URL =
   process.env.SOLANA_RPC_URL ||
   process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
   "https://api.mainnet-beta.solana.com";
 
-// Reuse 1 connection/parser (faster + less flaky)
 const connection = new Connection(RPC_URL, "confirmed");
 const parser = new TldParser(connection);
-
-// Legacy sentinel some older code stored in users.skr_name
-const LEGACY_NONE = "__NONE__";
 
 // 24h TTL: do not resolve on-chain more than once per day per wallet
 const TTL_MS = 24 * 60 * 60 * 1000;
 
-// Cache headers tuned by result
 function withCacheHeaders(res: NextResponse, nameFound: boolean) {
   if (nameFound) {
-    // If name exists, cache for 24h at CDN
     res.headers.set(
       "Cache-Control",
       "public, max-age=0, s-maxage=86400, stale-while-revalidate=604800"
     );
   } else {
-    // If name not found, cache short at CDN
     res.headers.set(
       "Cache-Control",
       "public, max-age=0, s-maxage=300, stale-while-revalidate=3600"
     );
   }
   return res;
+}
+
+function looksLikeDomain(v: unknown) {
+  const s = typeof v === "string" ? v.trim() : "";
+  if (!s) return null;
+  if (!s.includes(".")) return null;
+  if (s.length > 80) return null;
+  return s;
+}
+
+function parseTsMs(v: unknown): number {
+  const s = typeof v === "string" ? v : "";
+  if (!s) return 0;
+  const t = new Date(s).getTime();
+  return Number.isFinite(t) ? t : 0;
 }
 
 async function resolveMainDomain(wallet: string): Promise<string | null> {
@@ -49,15 +56,11 @@ async function resolveMainDomain(wallet: string): Promise<string | null> {
   }
 }
 
+// Keep your skr fallback (nice-to-have if user owns .skr but hasn't set main)
 async function resolveFallbackSkrDomain(wallet: string): Promise<string | null> {
   try {
     const owner = new PublicKey(wallet);
-
-    // "skr" WITHOUT the dot
-    const domains: any[] = await parser.getParsedAllUserDomainsFromTld(
-      owner,
-      "skr"
-    );
+    const domains: any[] = await parser.getParsedAllUserDomainsFromTld(owner, "skr");
     if (!Array.isArray(domains) || domains.length === 0) return null;
 
     for (const d of domains) {
@@ -84,9 +87,11 @@ async function resolveFallbackSkrDomain(wallet: string): Promise<string | null> 
 }
 
 async function resolveNameForWallet(wallet: string): Promise<string | null> {
+  // ✅ Any main domain first (could be .sol, .skr, etc.)
   const main = await resolveMainDomain(wallet);
   if (main) return main;
 
+  // ✅ Optional fallback: find owned .skr even if not set as main
   const fallback = await resolveFallbackSkrDomain(wallet);
   if (fallback) return fallback;
 
@@ -98,7 +103,6 @@ async function readWalletFromReq(req: NextRequest): Promise<string> {
     const { searchParams } = new URL(req.url);
     return String(searchParams.get("wallet") ?? "").trim();
   }
-
   const body = await req.json().catch(() => ({}));
   return String(body?.wallet ?? "").trim();
 }
@@ -109,18 +113,6 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   return handle(req);
-}
-
-function isValidSkrName(v: string) {
-  const s = (v || "").trim();
-  return s.length > 0 && s !== LEGACY_NONE && s.toLowerCase().endsWith(".skr");
-}
-
-function parseTsMs(v: unknown): number {
-  const s = typeof v === "string" ? v : "";
-  if (!s) return 0;
-  const t = new Date(s).getTime();
-  return Number.isFinite(t) ? t : 0;
 }
 
 async function handle(req: NextRequest) {
@@ -137,7 +129,7 @@ async function handle(req: NextRequest) {
     // 1) DB cache check (includes last resolve attempt time)
     const { data: user, error: selErr } = await supabaseAdmin
       .from("users")
-      .select("wallet, skr_name, skr_name_updated_at")
+      .select("wallet, main_domain, main_domain_updated_at")
       .eq("wallet", wallet)
       .maybeSingle();
 
@@ -151,19 +143,12 @@ async function handle(req: NextRequest) {
       );
     }
 
-    const cachedRaw = user?.skr_name ? String(user.skr_name).trim() : "";
-    const cachedValid = isValidSkrName(cachedRaw);
-
-    // clean legacy sentinel
-    if (user?.wallet && cachedRaw === LEGACY_NONE) {
-      void supabaseAdmin.from("users").update({ skr_name: null }).eq("wallet", wallet);
-    }
-
-    const lastCheckMs = parseTsMs((user as any)?.skr_name_updated_at);
+    const cachedRaw = looksLikeDomain((user as any)?.main_domain);
+    const lastCheckMs = parseTsMs((user as any)?.main_domain_updated_at);
     const isFresh = lastCheckMs > 0 && Date.now() - lastCheckMs < TTL_MS;
 
-    // ✅ If valid name and fresh → return immediately
-    if (cachedValid && isFresh) {
+    // ✅ If we have a cached name and it's fresh → return it
+    if (cachedRaw && isFresh) {
       return withCacheHeaders(
         NextResponse.json({
           ok: true,
@@ -177,8 +162,8 @@ async function handle(req: NextRequest) {
       );
     }
 
-    // ✅ If NO name but we checked within 24h → do NOT hit chain again
-    if (!cachedValid && isFresh) {
+    // ✅ If cached null and fresh → do NOT hit chain again
+    if (!cachedRaw && isFresh) {
       return withCacheHeaders(
         NextResponse.json({
           ok: true,
@@ -195,8 +180,7 @@ async function handle(req: NextRequest) {
 
     // 2) Resolve from chain (slow path)
     const resolved = await resolveNameForWallet(wallet);
-    const cleaned = resolved && String(resolved).trim() ? String(resolved).trim() : null;
-    const finalName = cleaned && cleaned.toLowerCase().endsWith(".skr") ? cleaned : null;
+    const cleaned = looksLikeDomain(resolved);
 
     // 3) Write back attempt time ALWAYS (+ name if found)
     await supabaseAdmin
@@ -204,8 +188,8 @@ async function handle(req: NextRequest) {
       .upsert(
         {
           wallet,
-          skr_name: finalName,
-          skr_name_updated_at: new Date().toISOString(),
+          main_domain: cleaned,
+          main_domain_updated_at: new Date().toISOString(),
         },
         { onConflict: "wallet" }
       );
@@ -214,24 +198,20 @@ async function handle(req: NextRequest) {
       NextResponse.json({
         ok: true,
         wallet,
-        name: finalName,
+        name: cleaned,
         cached: false,
-        source: finalName ? "onchain" : "none",
-        note: finalName
+        source: cleaned ? "onchain" : "none",
+        note: cleaned
           ? undefined
-          : "No main .skr set (and no owned .skr found). User may need to set a main domain in AllDomains.",
+          : "No main domain set (and no owned .skr found). User may need to set a main domain in AllDomains.",
       }),
-      !!finalName
+      !!cleaned
     );
   } catch (e: any) {
     console.error("resolve-name error:", e);
     return withCacheHeaders(
       NextResponse.json(
-        {
-          ok: false,
-          error: "Internal server error",
-          detail: String(e?.message || e),
-        },
+        { ok: false, error: "Internal server error", detail: String(e?.message || e) },
         { status: 500 }
       ),
       false

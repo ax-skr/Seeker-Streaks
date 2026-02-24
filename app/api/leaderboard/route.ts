@@ -6,16 +6,18 @@ type RowOut = {
   wallet: string;
   points: number;
   streak: number;
-  name: string | null; // from DB only (client can still resolve)
+  name: string | null; // from DB only
 };
 
-function looksLikeSkr(v: unknown) {
+function looksLikeDomain(v: unknown) {
   const s = typeof v === "string" ? v.trim() : "";
-  return s.length > 0 && s.toLowerCase().endsWith(".skr") ? s : null;
+  if (!s) return null;
+  if (!s.includes(".")) return null; // basic sanity: "name.tld"
+  if (s.length > 80) return null;
+  return s;
 }
 
 function cacheHeaders(res: NextResponse) {
-  // leaderboard changes frequently, keep short CDN cache
   res.headers.set(
     "Cache-Control",
     "public, max-age=0, s-maxage=10, stale-while-revalidate=60"
@@ -31,7 +33,7 @@ export async function GET(req: NextRequest) {
     // 1) Top 100 (FAST)
     const { data: topRows, error: topErr } = await supabaseAdmin
       .from("users")
-      .select("wallet, points, streak, verified_at, skr_name")
+      .select("wallet, points, streak, verified_at, main_domain")
       .not("verified_at", "is", null)
       .order("streak", { ascending: false })
       .order("points", { ascending: false })
@@ -41,7 +43,10 @@ export async function GET(req: NextRequest) {
     if (topErr) {
       console.error("leaderboard top100 error:", topErr);
       return cacheHeaders(
-        NextResponse.json({ ok: false, error: "Failed to load leaderboard" }, { status: 500 })
+        NextResponse.json(
+          { ok: false, error: "Failed to load leaderboard" },
+          { status: 500 }
+        )
       );
     }
 
@@ -50,7 +55,7 @@ export async function GET(req: NextRequest) {
       wallet: String(u.wallet ?? ""),
       points: Number(u.points ?? 0),
       streak: Number(u.streak ?? 0),
-      name: looksLikeSkr(u.skr_name),
+      name: looksLikeDomain(u.main_domain),
     }));
 
     // If no wallet requested, return only top100
@@ -61,7 +66,7 @@ export async function GET(req: NextRequest) {
     // 2) Fetch "me" row (real points/streak)
     const { data: meRow, error: meErr } = await supabaseAdmin
       .from("users")
-      .select("wallet, points, streak, verified_at, skr_name")
+      .select("wallet, points, streak, verified_at, main_domain")
       .eq("wallet", wallet)
       .maybeSingle();
 
@@ -71,7 +76,6 @@ export async function GET(req: NextRequest) {
     }
 
     if (!meRow?.wallet || !meRow?.verified_at) {
-      // not verified -> not ranked
       return cacheHeaders(NextResponse.json({ ok: true, rows, me: null }));
     }
 
@@ -93,7 +97,6 @@ export async function GET(req: NextRequest) {
       .eq("streak", myStreak)
       .gt("points", myPoints);
 
-    // Tie-breaker for deterministic ordering: wallet ASC
     const { count: sameStreakSamePointsLowerWalletCount } = await supabaseAdmin
       .from("users")
       .select("wallet", { count: "exact", head: true })
@@ -113,7 +116,7 @@ export async function GET(req: NextRequest) {
       wallet: String(meRow.wallet),
       points: myPoints,
       streak: myStreak,
-      name: looksLikeSkr(meRow.skr_name),
+      name: looksLikeDomain(meRow.main_domain),
     };
 
     return cacheHeaders(NextResponse.json({ ok: true, rows, me }));

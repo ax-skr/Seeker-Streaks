@@ -8,7 +8,7 @@ type Row = {
   wallet: string;
   points?: number;
   streak?: number;
-  name?: string | null; // .skr name
+  name?: string | null; // main domain (any TLD)
   rank?: number;
 };
 
@@ -67,16 +67,20 @@ export default function LeaderboardPage() {
   }
 
   function setCachedName(wallet: string, value: string | null) {
-    // If name exists: cache 24h. If null: cache 24h as well (backend TTL should handle "none" too)
-    // Keeping it 24h prevents client from re-hammering even if user refreshes quickly.
+    // Cache 24h for both name and null (backend TTL should handle "none" too)
     const ttlMs = 24 * 60 * 60 * 1000;
     nameCache.current.set(wallet, { value, expiresAt: Date.now() + ttlMs });
   }
 
+  // ✅ MAIN DOMAIN NORMALIZATION (Option B)
   function normalizeName(v: unknown): string | null {
     const s = typeof v === "string" ? v.trim() : "";
     if (!s) return null;
-    return s.toLowerCase().endsWith(".skr") ? s : null;
+    // accept any "name.tld"
+    if (!s.includes(".")) return null;
+    // cap length to avoid layout abuse
+    if (s.length > 80) return null;
+    return s;
   }
 
   async function resolveNamesBatch(wallets: string[], seq: number) {
@@ -94,7 +98,9 @@ export default function LeaderboardPage() {
     if (toFetch.length === 0) return;
 
     try {
-      const res = await fetch(`${baseUrl}/api/resolve-name-batch`, {
+      // NOTE: your route file name earlier was resolve-name-batch
+      // If your actual endpoint is /api/resolve-names-batch, change this URL accordingly.
+      const res = await fetch(`${baseUrl}/api/resolve-names-batch`, {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json" },
         cache: "no-store",
@@ -107,7 +113,7 @@ export default function LeaderboardPage() {
       const names: Record<string, string | null> =
         (data?.names && typeof data.names === "object" ? data.names : {}) as any;
 
-      // Cache results
+      // Cache results (any main domain allowed)
       for (const w of toFetch) {
         const n = normalizeName(names?.[w]);
         setCachedName(w, n);
@@ -137,8 +143,6 @@ export default function LeaderboardPage() {
         return { ...prev, name: cached };
       });
     } catch (e) {
-      // IMPORTANT: no retry loops here. If resolver is rate-limited, we just skip.
-      // Backend TTL + next refresh will handle it.
       console.warn("resolve-name-batch failed:", e);
     } finally {
       for (const w of toFetch) inflightWallets.current.delete(w);
@@ -361,8 +365,11 @@ export default function LeaderboardPage() {
                 return (
                   <div
                     key={`${r.wallet}-${idx}`}
-                    style={styles.row}
-                    className="lbRow"
+                    style={{
+                      ...styles.row,
+                      ...(showSkr ? styles.rowSkrGlow : null),
+                    }}
+                    className={`lbRow ${showSkr ? "lbRowSkr" : ""}`}
                   >
                     <div style={styles.colRank}>
                       <span style={styles.rankPill}>{r.rank ?? idx + 1}</span>
@@ -441,31 +448,33 @@ export default function LeaderboardPage() {
                 <div>Loading your rank…</div>
               </div>
             ) : myRow ? (
-              <div
-                style={{
-                  ...styles.row,
-                  gridTemplateColumns: "70px 1fr 110px 110px",
-                  borderTop: "none",
-                  background: "rgba(0,0,0,0.12)",
-                }}
-                className="lbRow"
-              >
-                <div style={styles.colRank}>
-                  <span style={styles.rankPill}>
-                    {typeof myRow.rank === "number" ? myRow.rank : "—"}
-                  </span>
-                </div>
+              (() => {
+                const display =
+                  (normalizeName(myRow.name) ||
+                    getCachedName(myRow.wallet) ||
+                    "").trim() || shortWallet(myRow.wallet);
 
-                <div style={styles.colName}>
-                  <div style={styles.userLine}>
-                    {(() => {
-                      const display =
-                        (normalizeName(myRow.name) ||
-                          getCachedName(myRow.wallet) ||
-                          "").trim() || shortWallet(myRow.wallet);
+                const showSkr = display.toLowerCase().endsWith(".skr");
 
-                      const showSkr = display.toLowerCase().endsWith(".skr");
-                      return (
+                return (
+                  <div
+                    style={{
+                      ...styles.row,
+                      gridTemplateColumns: "70px 1fr 110px 110px",
+                      borderTop: "none",
+                      background: "rgba(0,0,0,0.12)",
+                      ...(showSkr ? styles.rowSkrGlow : null),
+                    }}
+                    className={`lbRow ${showSkr ? "lbRowSkr" : ""}`}
+                  >
+                    <div style={styles.colRank}>
+                      <span style={styles.rankPill}>
+                        {typeof myRow.rank === "number" ? myRow.rank : "—"}
+                      </span>
+                    </div>
+
+                    <div style={styles.colName}>
+                      <div style={styles.userLine}>
                         <span
                           className="lbUserName"
                           style={showSkr ? styles.userName : styles.userNameSingle}
@@ -474,24 +483,24 @@ export default function LeaderboardPage() {
                           {display}
                           {showSkr && <span style={styles.skrGlow}> •</span>}
                         </span>
-                      );
-                    })()}
-                  </div>
-                  <div className="lbWalletLine" style={styles.walletLine}>
-                    {shortWallet(myRow.wallet)}
-                  </div>
-                </div>
+                      </div>
+                      <div className="lbWalletLine" style={styles.walletLine}>
+                        {shortWallet(myRow.wallet)}
+                      </div>
+                    </div>
 
-                <div style={styles.colPoints}>
-                  <div style={styles.statNum}>{Number(myRow.points ?? 0)}</div>
-                  <div style={styles.statLabel}>Points</div>
-                </div>
+                    <div style={styles.colPoints}>
+                      <div style={styles.statNum}>{Number(myRow.points ?? 0)}</div>
+                      <div style={styles.statLabel}>Points</div>
+                    </div>
 
-                <div style={styles.colStreak}>
-                  <div style={styles.statNum}>{Number(myRow.streak ?? 0)}</div>
-                  <div style={styles.statLabel}>Streak</div>
-                </div>
-              </div>
+                    <div style={styles.colStreak}>
+                      <div style={styles.statNum}>{Number(myRow.streak ?? 0)}</div>
+                      <div style={styles.statLabel}>Streak</div>
+                    </div>
+                  </div>
+                );
+              })()
             ) : (
               <div style={{ padding: 14, opacity: 0.85, fontSize: 13 }}>
                 Couldn’t load your rank right now.
@@ -665,6 +674,18 @@ const styles: Record<string, React.CSSProperties> = {
     borderTop: "1px solid rgba(255,255,255,0.06)",
     background: "rgba(0,0,0,0.14)",
   },
+
+  // ✅ NEW: cosmic green row glow ONLY when display ends with .skr
+  rowSkrGlow: {
+    borderTop: "1px solid rgba(0,255,163,0.22)",
+    boxShadow:
+      "inset 0 0 0 1px rgba(0,255,163,0.18), 0 0 18px rgba(0,255,163,0.10)",
+    background:
+      "radial-gradient(900px 140px at 12% 50%, rgba(0,255,163,0.18), transparent 60%)," +
+      "radial-gradient(700px 140px at 88% 40%, rgba(0,255,163,0.10), transparent 55%)," +
+      "rgba(0,0,0,0.16)",
+  },
+
   colRank: { display: "flex", alignItems: "center" },
   colName: {
     display: "flex",
