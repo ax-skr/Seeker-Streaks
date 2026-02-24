@@ -281,8 +281,8 @@ export default function LeaderboardPage() {
                 marginTop: 6,
                 fontSize: 12,
                 fontWeight: 900,
-                letterSpacing: 0.8,
-                opacity: 0.9,
+                letterSpacing: 0.9,
+                opacity: 0.92,
                 textTransform: "uppercase",
               }}
             >
@@ -302,28 +302,29 @@ export default function LeaderboardPage() {
                 loadMyRank();
               }}
               style={styles.btnSecondary}
+              className="lbBtn lbBtnSecondary"
             >
               Refresh
             </button>
-            <Link href="/" style={styles.btnPrimary as any}>
+            <Link href="/" style={styles.btnPrimary as any} className="lbBtn lbBtnPrimary">
               Back
             </Link>
           </div>
         </div>
 
         {loading && (
-          <div style={styles.loadingBox}>
+          <div style={styles.loadingBox} className="lbGlass">
             <div style={styles.spinner} />
             <div>Loading leaderboard…</div>
           </div>
         )}
 
         {!loading && err && (
-          <div style={styles.errorBox}>
+          <div style={styles.errorBox} className="lbGlassDanger">
             <div style={styles.errorTitle}>Couldn’t load leaderboard</div>
             <div style={styles.errorText}>{err}</div>
             <div style={{ marginTop: 12 }}>
-              <button onClick={load} style={styles.btnSecondary}>
+              <button onClick={load} style={styles.btnSecondary} className="lbBtn lbBtnSecondary">
                 Try again
               </button>
             </div>
@@ -331,7 +332,7 @@ export default function LeaderboardPage() {
         )}
 
         {!loading && !err && rows.length === 0 && (
-          <div style={styles.emptyBox}>
+          <div style={styles.emptyBox} className="lbGlass">
             No entries yet. Verify + check in, then refresh.
           </div>
         )}
@@ -352,6 +353,7 @@ export default function LeaderboardPage() {
                   shortWallet(r.wallet);
 
                 const showSkr = isSkrDisplay(display);
+                const isMe = !!myWallet && r.wallet === myWallet && connected;
 
                 return (
                   <div
@@ -359,11 +361,14 @@ export default function LeaderboardPage() {
                     style={{
                       ...styles.row,
                       ...(showSkr ? styles.rowSkrGlow : null),
+                      ...(isMe ? styles.rowMePop : null),
                     }}
-                    className={`lbRow ${showSkr ? "lbRowSkr" : ""}`}
+                    className={`lbRow ${showSkr ? "lbRowSkr" : ""} ${isMe ? "lbRowMe" : ""}`}
                   >
                     <div style={styles.colRank}>
-                      <span style={styles.rankPill}>{r.rank ?? idx + 1}</span>
+                      <span style={{ ...styles.rankPill, ...(isMe ? styles.rankPillMe : null) }}>
+                        {r.rank ?? idx + 1}
+                      </span>
                     </div>
 
                     <div style={styles.colName}>
@@ -375,7 +380,14 @@ export default function LeaderboardPage() {
                         >
                           {display}
                         </span>
+
+                        {isMe && (
+                          <span style={styles.mePill} className="lbMePill">
+                            YOU
+                          </span>
+                        )}
                       </div>
+
                       <div className="lbWalletLine" style={styles.walletLine}>
                         {shortWallet(r.wallet)}
                       </div>
@@ -395,7 +407,7 @@ export default function LeaderboardPage() {
               })}
             </div>
 
-            <div style={styles.footerNote}>
+            <div style={styles.footerNote} className="lbFooterNote">
               Only verified and locked in 👀 users show here.
             </div>
           </div>
@@ -410,6 +422,7 @@ export default function LeaderboardPage() {
               background: "rgba(255,255,255,0.04)",
               overflow: "hidden",
             }}
+            className="lbGlass"
           >
             <div
               style={{
@@ -440,9 +453,8 @@ export default function LeaderboardPage() {
             ) : myRow ? (
               (() => {
                 const display =
-                  (normalizeName(myRow.name) ||
-                    getCachedName(myRow.wallet) ||
-                    "").trim() || shortWallet(myRow.wallet);
+                  (normalizeName(myRow.name) || getCachedName(myRow.wallet) || "").trim() ||
+                  shortWallet(myRow.wallet);
 
                 const showSkr = isSkrDisplay(display);
 
@@ -452,7 +464,7 @@ export default function LeaderboardPage() {
                       ...styles.row,
                       gridTemplateColumns: "70px 1fr 110px 110px",
                       borderTop: "none",
-                      background: "rgba(0,0,0,0.12)",
+                      background: "rgba(0,0,0,0.18)",
                       ...(showSkr ? styles.rowSkrGlow : null),
                     }}
                     className={`lbRow ${showSkr ? "lbRowSkr" : ""}`}
@@ -501,28 +513,32 @@ export default function LeaderboardPage() {
 
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-
-        /* ===== Starfield / nebula background (Seeker-style) ===== */
-        .lbShell {
-          position: relative;
-          overflow: hidden;
+        @keyframes mePulse {
+          0%   { box-shadow: 0 0 0 rgba(0,255,163,0.0); }
+          45%  { box-shadow: 0 0 22px rgba(0,255,163,0.18); }
+          100% { box-shadow: 0 0 0 rgba(0,255,163,0.0); }
         }
+
+        /* ===== Seeker Streaks cosmic background ===== */
+        .lbShell { position: relative; overflow: hidden; }
         .lbShell::before {
           content: "";
           position: absolute;
           inset: 0;
           pointer-events: none;
-          background:
+
+          /* If you add /public/leaderboard-bg.png it will show; otherwise gradients carry it */
+          background-image:
+            url("/leaderboard-bg.png"),
             radial-gradient(1200px 700px at 18% 12%, rgba(0,255,163,0.14), transparent 62%),
-            radial-gradient(1000px 650px at 82% 20%, rgba(102,102,255,0.20), transparent 62%),
-            radial-gradient(900px 520px at 70% 78%, rgba(170, 80, 255, 0.12), transparent 60%),
-            radial-gradient(850px 520px at 20% 85%, rgba(0, 180, 255, 0.10), transparent 60%),
-            /* stars layer 1 */
+            radial-gradient(1000px 650px at 82% 20%, rgba(120,120,255,0.22), transparent 62%),
+            radial-gradient(900px 520px at 68% 80%, rgba(170, 80, 255, 0.14), transparent 60%),
+            radial-gradient(850px 520px at 20% 86%, rgba(0, 180, 255, 0.12), transparent 60%),
             radial-gradient(rgba(255,255,255,0.22) 1px, transparent 1px),
-            /* stars layer 2 */
             radial-gradient(rgba(255,255,255,0.14) 1px, transparent 1px),
             linear-gradient(180deg, #04050a 0%, #070816 45%, #04050a 100%);
           background-size:
+            cover,
             auto,
             auto,
             auto,
@@ -531,6 +547,7 @@ export default function LeaderboardPage() {
             220px 220px,
             auto;
           background-position:
+            center,
             0 0,
             0 0,
             0 0,
@@ -538,41 +555,75 @@ export default function LeaderboardPage() {
             0 0,
             40px 60px,
             0 0;
+          background-repeat:
+            no-repeat,
+            no-repeat,
+            no-repeat,
+            no-repeat,
+            no-repeat,
+            repeat,
+            repeat,
+            no-repeat;
           filter: saturate(1.08);
           opacity: 1;
         }
         .lbShell::after {
-          /* subtle grain/noise vibe */
           content: "";
           position: absolute;
           inset: 0;
           pointer-events: none;
-          background-image:
-            radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);
+          background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);
           background-size: 3px 3px;
-          opacity: 0.12;
+          opacity: 0.11;
           mix-blend-mode: overlay;
         }
 
-        .lbRow > div:nth-child(2),
-        .lbHead > div:nth-child(2) {
-          min-width: 0;
+        /* Glass helpers */
+        .lbGlass {
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+        }
+        .lbGlassDanger {
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
         }
 
+        /* Buttons: nicer hover/active */
+        .lbBtn {
+          transition: transform 120ms ease, box-shadow 160ms ease, border-color 160ms ease, background 160ms ease;
+          will-change: transform;
+        }
+        .lbBtn:hover { transform: translateY(-1px); }
+        .lbBtn:active { transform: translateY(0px) scale(0.99); }
+
+        /* Rows */
+        .lbRow {
+          transition: transform 160ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease;
+        }
+        .lbRow:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 12px 30px rgba(0,0,0,0.28);
+        }
+
+        /* Connected wallet row "pop out" */
+        .lbRowMe {
+          transform: translateY(-2px) scale(1.01);
+          animation: mePulse 1.9s ease-in-out infinite;
+        }
+        .lbRowMe:hover {
+          transform: translateY(-3px) scale(1.012);
+        }
+
+        /* Keep columns from overflowing */
+        .lbRow > div:nth-child(2),
+        .lbHead > div:nth-child(2) { min-width: 0; }
+
+        /* Responsive */
         @media (max-width: 520px) {
-          .lbHead, .lbRow {
-            grid-template-columns: 58px 1fr 74px 74px !important;
-          }
-          .lbWrap {
-            overflow-x: hidden !important;
-          }
-          .lbRow .lbUserName {
-            font-size: 13px !important;
-            letter-spacing: 0.1px !important;
-          }
-          .lbRow .lbWalletLine {
-            font-size: 11px !important;
-          }
+          .lbHead, .lbRow { grid-template-columns: 58px 1fr 74px 74px !important; }
+          .lbWrap { overflow-x: hidden !important; }
+          .lbRow .lbUserName { font-size: 13px !important; letter-spacing: 0.1px !important; }
+          .lbRow .lbWalletLine { font-size: 11px !important; }
         }
       `}</style>
     </div>
@@ -589,15 +640,17 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily:
       'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
   },
+
   card: {
     width: "min(980px, 100%)",
     border: "1px solid rgba(255,255,255,0.10)",
-    borderRadius: 18,
-    background: "rgba(10, 12, 22, 0.72)",
-    boxShadow: "0 20px 60px rgba(0,0,0,0.55)",
+    borderRadius: 20,
+    background: "rgba(10, 12, 22, 0.70)",
+    boxShadow: "0 22px 70px rgba(0,0,0,0.62)",
     padding: 18,
-    backdropFilter: "blur(10px)",
+    backdropFilter: "blur(12px)",
   },
+
   headerRow: {
     display: "flex",
     gap: 16,
@@ -606,61 +659,71 @@ const styles: Record<string, React.CSSProperties> = {
     flexWrap: "wrap",
     marginBottom: 14,
   },
+
   title: {
     fontSize: 22,
-    fontWeight: 800,
+    fontWeight: 900,
     letterSpacing: 0.2,
   },
+
   sub: {
-    marginTop: 4,
+    marginTop: 6,
     fontSize: 13,
-    opacity: 0.8,
+    opacity: 0.82,
   },
+
   badge: {
     display: "inline-block",
     padding: "2px 8px",
     borderRadius: 999,
-    border: "1px solid rgba(0,255,163,0.35)",
-    background: "rgba(0,255,163,0.08)",
-    color: "rgba(210,255,240,1)",
-    fontWeight: 700,
+    border: "1px solid rgba(0,255,163,0.38)",
+    background: "rgba(0,255,163,0.09)",
+    color: "rgba(225,255,246,1)",
+    fontWeight: 900,
   },
+
   actions: {
     display: "flex",
     gap: 10,
     alignItems: "center",
   },
+
   btnPrimary: {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
     padding: "10px 14px",
     borderRadius: 12,
-    border: "1px solid rgba(0,255,163,0.45)",
+    border: "1px solid rgba(0,255,163,0.46)",
     background:
-      "linear-gradient(90deg, rgba(0,255,163,0.18), rgba(102,102,255,0.12))",
+      "linear-gradient(90deg, rgba(0,255,163,0.18), rgba(102,102,255,0.14))",
     color: "#EFFFF9",
-    fontWeight: 800,
+    fontWeight: 900,
     textDecoration: "none",
+    boxShadow: "0 10px 24px rgba(0,0,0,0.28)",
   },
+
   btnSecondary: {
     padding: "10px 14px",
     borderRadius: 12,
     border: "1px solid rgba(255,255,255,0.14)",
     background: "rgba(255,255,255,0.06)",
     color: "#EAEAF2",
-    fontWeight: 700,
+    fontWeight: 800,
     cursor: "pointer",
+    boxShadow: "0 10px 24px rgba(0,0,0,0.22)",
   },
+
   loadingBox: {
     display: "flex",
     gap: 12,
     alignItems: "center",
     padding: 14,
-    borderRadius: 14,
+    borderRadius: 16,
     border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.04)",
+    background: "rgba(255,255,255,0.05)",
   },
+
   spinner: {
     width: 16,
     height: 16,
@@ -669,47 +732,58 @@ const styles: Record<string, React.CSSProperties> = {
     borderTop: "2px solid rgba(0,255,163,0.9)",
     animation: "spin 0.9s linear infinite",
   },
+
   errorBox: {
     padding: 14,
-    borderRadius: 14,
+    borderRadius: 16,
     border: "1px solid rgba(255,90,90,0.35)",
     background: "rgba(255,90,90,0.08)",
   },
+
   errorTitle: { fontWeight: 900, marginBottom: 6 },
   errorText: { opacity: 0.9, fontSize: 13, whiteSpace: "pre-wrap" },
+
   emptyBox: {
     padding: 14,
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.04)",
-    opacity: 0.9,
-  },
-  tableWrap: {
     borderRadius: 16,
     border: "1px solid rgba(255,255,255,0.10)",
-    overflow: "hidden",
+    background: "rgba(255,255,255,0.05)",
+    opacity: 0.9,
   },
+
+  tableWrap: {
+    borderRadius: 18,
+    border: "1px solid rgba(255,255,255,0.10)",
+    overflow: "hidden",
+    boxShadow: "0 18px 55px rgba(0,0,0,0.30)",
+  },
+
   tableHead: {
     display: "grid",
     gridTemplateColumns: "70px 1fr 110px 110px",
     gap: 0,
     padding: "12px 12px",
-    background: "rgba(255,255,255,0.04)",
+    background:
+      "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))",
     fontWeight: 900,
     fontSize: 12,
     textTransform: "uppercase",
-    letterSpacing: 0.8,
+    letterSpacing: 0.9,
+    borderBottom: "1px solid rgba(255,255,255,0.06)",
   },
+
   tableBody: {
     display: "flex",
     flexDirection: "column",
   },
+
   row: {
     display: "grid",
     gridTemplateColumns: "70px 1fr 110px 110px",
     padding: "12px 12px",
     borderTop: "1px solid rgba(255,255,255,0.06)",
-    background: "rgba(0,0,0,0.14)",
+    background:
+      "linear-gradient(180deg, rgba(0,0,0,0.16), rgba(0,0,0,0.10))",
   },
 
   // cosmic green row glow ONLY when display ends with .skr
@@ -720,28 +794,43 @@ const styles: Record<string, React.CSSProperties> = {
     background:
       "radial-gradient(900px 140px at 12% 50%, rgba(0,255,163,0.18), transparent 60%)," +
       "radial-gradient(700px 140px at 88% 40%, rgba(0,255,163,0.10), transparent 55%)," +
-      "rgba(0,0,0,0.16)",
+      "linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.10))",
+  },
+
+  // Connected wallet row pop-out
+  rowMePop: {
+    borderTop: "1px solid rgba(0,255,163,0.35)",
+    boxShadow:
+      "inset 0 0 0 1px rgba(0,255,163,0.22), 0 14px 40px rgba(0,0,0,0.40), 0 0 26px rgba(0,255,163,0.16)",
+    background:
+      "radial-gradient(900px 160px at 16% 40%, rgba(0,255,163,0.22), transparent 60%)," +
+      "radial-gradient(700px 180px at 82% 58%, rgba(120,120,255,0.16), transparent 58%)," +
+      "linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.10))",
   },
 
   colRank: { display: "flex", alignItems: "center" },
+
   colName: {
     display: "flex",
     minWidth: 0,
     flexDirection: "column",
     justifyContent: "center",
   },
+
   colPoints: {
     display: "flex",
     flexDirection: "column",
     alignItems: "flex-end",
     justifyContent: "center",
   },
+
   colStreak: {
     display: "flex",
     flexDirection: "column",
     alignItems: "flex-end",
     justifyContent: "center",
   },
+
   rankPill: {
     display: "inline-flex",
     minWidth: 44,
@@ -752,7 +841,32 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(102,102,255,0.10)",
     fontWeight: 900,
   },
+
+  rankPillMe: {
+    border: "1px solid rgba(0,255,163,0.44)",
+    background: "rgba(0,255,163,0.10)",
+    boxShadow: "0 0 18px rgba(0,255,163,0.16)",
+  },
+
   userLine: { display: "flex", alignItems: "center", gap: 10, minWidth: 0 },
+
+  mePill: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    height: 18,
+    padding: "0 8px",
+    borderRadius: 999,
+    border: "1px solid rgba(0,255,163,0.40)",
+    background:
+      "linear-gradient(90deg, rgba(0,255,163,0.18), rgba(102,102,255,0.10))",
+    color: "#EFFFF9",
+    fontSize: 11,
+    fontWeight: 900,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    flex: "0 0 auto",
+  },
 
   userName: {
     fontWeight: 900,
@@ -777,14 +891,17 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap",
   },
 
-  walletLine: { fontSize: 12, opacity: 0.7, marginTop: 2 },
+  walletLine: { fontSize: 12, opacity: 0.72, marginTop: 2 },
+
   statNum: { fontWeight: 900, fontSize: 16 },
   statLabel: { fontSize: 11, opacity: 0.7, marginTop: 2 },
+
   footerNote: {
     padding: 12,
     fontSize: 12,
-    opacity: 0.7,
+    opacity: 0.72,
     borderTop: "1px solid rgba(255,255,255,0.06)",
-    background: "rgba(255,255,255,0.03)",
+    background:
+      "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02))",
   },
 };
