@@ -293,8 +293,7 @@ export default function LeaderboardPage() {
             </div>
 
             <div style={styles.sub}>
-              Ranked by <span style={styles.badge}>longest streak</span>, then
-              total points
+              Ranked by <span style={styles.badge}>longest streak</span>, then total points
             </div>
           </div>
 
@@ -309,11 +308,7 @@ export default function LeaderboardPage() {
             >
               Refresh
             </button>
-            <Link
-              href="/"
-              style={styles.btnPrimary as any}
-              className="lbBtn lbBtnPrimary"
-            >
+            <Link href="/" style={styles.btnPrimary as any} className="lbBtn lbBtnPrimary">
               Back
             </Link>
           </div>
@@ -331,11 +326,7 @@ export default function LeaderboardPage() {
             <div style={styles.errorTitle}>Couldn’t load leaderboard</div>
             <div style={styles.errorText}>{err}</div>
             <div style={{ marginTop: 12 }}>
-              <button
-                onClick={load}
-                style={styles.btnSecondary}
-                className="lbBtn lbBtnSecondary"
-              >
+              <button onClick={load} style={styles.btnSecondary} className="lbBtn lbBtnSecondary">
                 Try again
               </button>
             </div>
@@ -374,17 +365,10 @@ export default function LeaderboardPage() {
                       ...(showSkr ? styles.rowSkrGlow : null),
                       ...(isMe ? styles.rowMePop : null),
                     }}
-                    className={`lbRow ${showSkr ? "lbRowSkr" : ""} ${
-                      isMe ? "lbRowMe" : ""
-                    }`}
+                    className={`lbRow ${showSkr ? "lbRowSkr" : ""} ${isMe ? "lbRowMe" : ""}`}
                   >
                     <div style={styles.colRank}>
-                      <span
-                        style={{
-                          ...styles.rankPill,
-                          ...(isMe ? styles.rankPillMe : null),
-                        }}
-                      >
+                      <span style={{ ...styles.rankPill, ...(isMe ? styles.rankPillMe : null) }}>
                         {r.rank ?? idx + 1}
                       </span>
                     </div>
@@ -394,11 +378,7 @@ export default function LeaderboardPage() {
                         <span
                           className="lbUserName"
                           style={
-                            isMe
-                              ? styles.userNameMe
-                              : showSkr
-                              ? styles.userName
-                              : styles.userNameSingle
+                            isMe ? styles.userNameMe : showSkr ? styles.userName : styles.userNameSingle
                           }
                           title={display}
                         >
@@ -412,25 +392,18 @@ export default function LeaderboardPage() {
                         )}
                       </div>
 
-                      <div
-                        className="lbWalletLine"
-                        style={isMe ? styles.walletLineMe : styles.walletLine}
-                      >
+                      <div className="lbWalletLine" style={isMe ? styles.walletLineMe : styles.walletLine}>
                         {shortWallet(r.wallet)}
                       </div>
                     </div>
 
                     <div style={styles.colPoints}>
-                      <div style={isMe ? styles.statNumMe : styles.statNum}>
-                        {Number(r.points ?? 0)}
-                      </div>
+                      <div style={isMe ? styles.statNumMe : styles.statNum}>{Number(r.points ?? 0)}</div>
                       <div style={styles.statLabel}>Points</div>
                     </div>
 
                     <div style={styles.colStreak}>
-                      <div style={isMe ? styles.statNumMe : styles.statNum}>
-                        {Number(r.streak ?? 0)}
-                      </div>
+                      <div style={isMe ? styles.statNumMe : styles.statNum}>{Number(r.streak ?? 0)}</div>
                       <div style={styles.statLabel}>Streak</div>
                     </div>
                   </div>
@@ -470,22 +443,15 @@ export default function LeaderboardPage() {
             </div>
 
             {myLoading ? (
-              <div
-                style={{
-                  padding: 14,
-                  display: "flex",
-                  gap: 12,
-                  alignItems: "center",
-                }}
-              >
+              <div style={{ padding: 14, display: "flex", gap: 12, alignItems: "center" }}>
                 <div style={styles.spinner} />
                 <div>Loading your rank…</div>
               </div>
             ) : myRow ? (
               (() => {
                 const display =
-                  (normalizeName(myRow.name) || getCachedName(myRow.wallet) || "")
-                    .trim() || shortWallet(myRow.wallet);
+                  (normalizeName(myRow.name) || getCachedName(myRow.wallet) || "").trim() ||
+                  shortWallet(myRow.wallet);
 
                 const showSkr = isSkrDisplay(display);
 
@@ -501,9 +467,7 @@ export default function LeaderboardPage() {
                     className={`lbRow ${showSkr ? "lbRowSkr" : ""}`}
                   >
                     <div style={styles.colRank}>
-                      <span style={styles.rankPill}>
-                        {typeof myRow.rank === "number" ? myRow.rank : "—"}
-                      </span>
+                      <span style={styles.rankPill}>{typeof myRow.rank === "number" ? myRow.rank : "—"}</span>
                     </div>
 
                     <div style={styles.colName}>
@@ -534,9 +498,7 @@ export default function LeaderboardPage() {
                 );
               })()
             ) : (
-              <div style={{ padding: 14, opacity: 0.85, fontSize: 13 }}>
-                Couldn’t load your rank right now.
-              </div>
+              <div style={{ padding: 14, opacity: 0.85, fontSize: 13 }}>Couldn’t load your rank right now.</div>
             )}
           </div>
         )}
@@ -545,65 +507,87 @@ export default function LeaderboardPage() {
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-        /* Premium pulse (no layout artifacts) */
+        /* Lightweight pulse */
         @keyframes mePulse {
-          0%   { filter: drop-shadow(0 0 0 rgba(0,255,163,0.0)); }
-          50%  { filter: drop-shadow(0 12px 28px rgba(0,255,163,0.22)); }
-          100% { filter: drop-shadow(0 0 0 rgba(0,255,163,0.0)); }
+          0%   { box-shadow: 0 0 0 rgba(0,255,163,0.0); }
+          50%  { box-shadow: 0 0 52px rgba(0,255,163,0.22); }
+          100% { box-shadow: 0 0 0 rgba(0,255,163,0.0); }
         }
 
-        /* Slow drift — very cheap (transform only) */
+        /* Drift the layered background positions (cheap) */
         @keyframes cosmicDrift {
-          0%   { transform: translate3d(0px, 0px, 0); }
-          50%  { transform: translate3d(14px, -10px, 0); }
-          100% { transform: translate3d(0px, 0px, 0); }
+          0%   { background-position:
+            0 0,
+            0 0,
+            0 0,
+            center,
+            0 0,
+            40px 60px,
+            0 0;
+          }
+          50%  { background-position:
+            22px -14px,
+            -18px 10px,
+            14px 18px,
+            calc(50% + 10px) calc(50% - 6px),
+            18px 10px,
+            60px 82px,
+            0 0;
+          }
+          100% { background-position:
+            0 0,
+            0 0,
+            0 0,
+            center,
+            0 0,
+            40px 60px,
+            0 0;
+          }
         }
 
-        /* ===== FIX: correct layering and make background truly full screen ===== */
-        .lbShell { position: relative; overflow: hidden; }
+        /* IMPORTANT: let the background be a FIXED layer so it covers the whole page/scroll */
+        .lbShell { position: relative; width: 100%; min-height: 100vh; overflow: hidden; }
         .lbShell::before, .lbShell::after { z-index: 0; }
         .lbCard { position: relative; z-index: 1; }
 
-        /* ===== HD cosmic background (no "zoomed blurry" cover) ===== */
         .lbShell::before {
           content: "";
-          position: absolute;
-          inset: -40px; /* bleed so it always fills edges */
+          position: fixed;
+          inset: 0;
           pointer-events: none;
 
-          /* If you add /public/leaderboard-cosmic@2x.png, retina looks razor sharp */
           background-image:
+            radial-gradient(1100px 700px at 18% 22%, rgba(0,255,163,0.16), transparent 62%),
+            radial-gradient(1050px 680px at 82% 18%, rgba(120,120,255,0.18), transparent 62%),
+            radial-gradient(1000px 650px at 68% 80%, rgba(170, 80, 255, 0.14), transparent 60%),
+
+            /* HD cosmic image (auto-picks @2x on supported devices) */
             image-set(
               url("/leaderboard-cosmic.png") 1x,
               url("/leaderboard-cosmic@2x.png") 2x
             ),
-            radial-gradient(1100px 700px at 18% 16%, rgba(180, 70, 255, 0.18), transparent 62%),
-            radial-gradient(1000px 620px at 80% 22%, rgba(0, 190, 255, 0.16), transparent 62%),
-            radial-gradient(900px 560px at 68% 82%, rgba(0, 255, 163, 0.14), transparent 60%),
-            radial-gradient(rgba(255,255,255,0.20) 1px, transparent 1px),
-            radial-gradient(rgba(255,255,255,0.14) 1px, transparent 1px),
-            radial-gradient(rgba(255,255,255,0.10) 1px, transparent 1px),
-            linear-gradient(180deg, #03040a 0%, #07081a 45%, #03040a 100%);
 
-          /* KEY: avoid blurry "cover" zoom. Use contain. Gradients keep it HD. */
+            radial-gradient(rgba(255,255,255,0.20) 1px, transparent 1px),
+            radial-gradient(rgba(255,255,255,0.12) 1px, transparent 1px),
+            linear-gradient(180deg, #04050a 0%, #070816 45%, #04050a 100%);
+
+          /* Keep the nebula crisp: do NOT upscale beyond cover; no weird center-only placement */
           background-size:
-            contain,
             auto,
             auto,
             auto,
+            cover,
             120px 120px,
             220px 220px,
-            340px 340px,
             auto;
 
           background-position:
+            0 0,
+            0 0,
+            0 0,
             center,
             0 0,
-            0 0,
-            0 0,
-            0 0,
             40px 60px,
-            80px 120px,
             0 0;
 
           background-repeat:
@@ -613,21 +597,21 @@ export default function LeaderboardPage() {
             no-repeat,
             repeat,
             repeat,
-            repeat,
             no-repeat;
 
-          filter: saturate(1.12) contrast(1.10);
+          /* Avoid "blurry/enlarged" look: remove aggressive filters */
+          filter: contrast(1.06) saturate(1.02);
           opacity: 1;
 
-          transform: translate3d(0,0,0);
-          will-change: transform;
-          animation: cosmicDrift 36s ease-in-out infinite;
+          animation: cosmicDrift 34s ease-in-out infinite;
+          will-change: background-position;
+          transform: translateZ(0);
         }
 
         /* subtle grain */
         .lbShell::after {
           content: "";
-          position: absolute;
+          position: fixed;
           inset: 0;
           pointer-events: none;
           background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);
@@ -636,7 +620,13 @@ export default function LeaderboardPage() {
           mix-blend-mode: overlay;
         }
 
-        /* Buttons */
+        .lbCard { box-shadow: 0 22px 80px rgba(0,0,0,0.68); }
+
+        .lbGlass, .lbGlassDanger {
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+        }
+
         .lbBtn {
           transition: transform 120ms ease, box-shadow 160ms ease, border-color 160ms ease, background 160ms ease;
           will-change: transform;
@@ -644,7 +634,6 @@ export default function LeaderboardPage() {
         .lbBtn:hover { transform: translateY(-1px); }
         .lbBtn:active { transform: translateY(0px) scale(0.99); }
 
-        /* Rows */
         .lbRow {
           transition: transform 160ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease;
           position: relative;
@@ -654,40 +643,30 @@ export default function LeaderboardPage() {
           box-shadow: 0 12px 30px rgba(0,0,0,0.28);
         }
 
-        /* ===== CLEAN "YOU" POP (FIX: remove that random left bar) ===== */
+        /* CLEAN "pop": no scale, no random bar. Just a premium frame + aura */
         .lbRowMe {
-          z-index: 3;
-          position: relative;
-          transform: translateY(-3px) scale(1.02);
-          animation: mePulse 1.9s ease-in-out infinite;
+          transform: translateY(-3px);
+          z-index: 2;
+          animation: mePulse 2.2s ease-in-out infinite;
         }
-        .lbRowMe:hover { transform: translateY(-4px) scale(1.02); }
+        .lbRowMe:hover { transform: translateY(-4px); }
 
-        /* The pop ring + aura (no weird artifacts) */
         .lbRowMe::before {
           content: "";
           position: absolute;
-          inset: 6px;
+          inset: 6px;                 /* stays inside the row so nothing sticks out left */
           border-radius: 14px;
           pointer-events: none;
           box-shadow:
-            0 0 0 1px rgba(0,255,163,0.34),
-            0 12px 30px rgba(0,0,0,0.42),
-            0 0 34px rgba(0,255,163,0.22);
+            inset 0 0 0 2px rgba(0,255,163,0.36),
+            0 14px 34px rgba(0,0,0,0.44),
+            0 0 36px rgba(0,255,163,0.20);
         }
-
-        /* IMPORTANT: kill any accidental stripe/bar */
-        .lbRowMe::after { content: none !important; }
-
-        /* Make sure the row itself doesn't clip the ring */
-        .lbWrap { overflow: visible; }
-        .lbRowMe { overflow: visible; }
 
         /* Keep columns from overflowing */
         .lbRow > div:nth-child(2),
         .lbHead > div:nth-child(2) { min-width: 0; }
 
-        /* Responsive */
         @media (max-width: 520px) {
           .lbHead, .lbRow { grid-template-columns: 58px 1fr 74px 74px !important; }
           .lbWrap { overflow-x: hidden !important; }
@@ -696,7 +675,6 @@ export default function LeaderboardPage() {
           .lbRow .lbWalletLine { font-size: 11px !important; }
         }
 
-        /* Reduced motion */
         @media (prefers-reduced-motion: reduce) {
           .lbShell::before { animation: none !important; }
           .lbRowMe { animation: none !important; }
@@ -719,7 +697,6 @@ const styles: Record<string, React.CSSProperties> = {
       'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
   },
 
-  // Darker / blacker main card so the cosmic edges look intentional
   card: {
     width: "min(980px, 100%)",
     border: "1px solid rgba(255,255,255,0.12)",
@@ -774,8 +751,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "10px 14px",
     borderRadius: 12,
     border: "1px solid rgba(0,255,163,0.46)",
-    background:
-      "linear-gradient(90deg, rgba(0,255,163,0.18), rgba(102,102,255,0.14))",
+    background: "linear-gradient(90deg, rgba(0,255,163,0.18), rgba(102,102,255,0.14))",
     color: "#EFFFF9",
     fontWeight: 900,
     textDecoration: "none",
@@ -842,8 +818,7 @@ const styles: Record<string, React.CSSProperties> = {
     gridTemplateColumns: "70px 1fr 110px 110px",
     gap: 0,
     padding: "12px 12px",
-    background:
-      "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))",
+    background: "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))",
     fontWeight: 900,
     fontSize: 12,
     textTransform: "uppercase",
@@ -861,28 +836,24 @@ const styles: Record<string, React.CSSProperties> = {
     gridTemplateColumns: "70px 1fr 110px 110px",
     padding: "12px 12px",
     borderTop: "1px solid rgba(255,255,255,0.06)",
-    background:
-      "linear-gradient(180deg, rgba(0,0,0,0.16), rgba(0,0,0,0.10))",
+    background: "linear-gradient(180deg, rgba(0,0,0,0.16), rgba(0,0,0,0.10))",
   },
 
-  // .skr rows: slightly toned down so it doesn't compete with "YOU"
   rowSkrGlow: {
-    borderTop: "1px solid rgba(0,255,163,0.18)",
-    boxShadow:
-      "inset 0 0 0 1px rgba(0,255,163,0.12), 0 0 14px rgba(0,255,163,0.08)",
+    borderTop: "1px solid rgba(0,255,163,0.22)",
+    boxShadow: "inset 0 0 0 1px rgba(0,255,163,0.16), 0 0 20px rgba(0,255,163,0.10)",
     background:
-      "radial-gradient(900px 140px at 12% 50%, rgba(0,255,163,0.14), transparent 60%)," +
-      "radial-gradient(700px 140px at 88% 40%, rgba(0,255,163,0.08), transparent 55%)," +
+      "radial-gradient(900px 140px at 12% 50%, rgba(0,255,163,0.18), transparent 60%)," +
+      "radial-gradient(700px 140px at 88% 40%, rgba(0,255,163,0.10), transparent 55%)," +
       "linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.10))",
   },
 
-  // "YOU" row base (ring/aura comes from CSS ::before)
   rowMePop: {
-    borderTop: "1px solid rgba(0,255,163,0.40)",
-    boxShadow: "inset 0 0 0 1px rgba(0,255,163,0.14)",
+    borderTop: "1px solid rgba(0,255,163,0.55)",
+    boxShadow: "inset 0 0 0 1px rgba(0,255,163,0.18)",
     background:
-      "radial-gradient(900px 220px at 18% 50%, rgba(0,255,163,0.22), transparent 62%)," +
-      "radial-gradient(900px 220px at 86% 55%, rgba(120,120,255,0.14), transparent 64%)," +
+      "radial-gradient(900px 220px at 18% 50%, rgba(0,255,163,0.24), transparent 62%)," +
+      "radial-gradient(900px 220px at 86% 55%, rgba(120,120,255,0.16), transparent 64%)," +
       "linear-gradient(180deg, rgba(0,0,0,0.22), rgba(0,0,0,0.12))",
   },
 
@@ -936,8 +907,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 8px",
     borderRadius: 999,
     border: "1px solid rgba(0,255,163,0.55)",
-    background:
-      "linear-gradient(90deg, rgba(0,255,163,0.18), rgba(102,102,255,0.10))",
+    background: "linear-gradient(90deg, rgba(0,255,163,0.18), rgba(102,102,255,0.10))",
     color: "#EFFFF9",
     fontSize: 11,
     fontWeight: 900,
@@ -996,7 +966,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     opacity: 0.72,
     borderTop: "1px solid rgba(255,255,255,0.06)",
-    background:
-      "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02))",
+    background: "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02))",
   },
 };
