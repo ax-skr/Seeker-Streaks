@@ -161,7 +161,7 @@ Compatible with Android devices and optimized for Solana Seeker.
 
 Demo video showcasing app functionality:
 
-👉 https://youtube.com/shorts/e8R0gh64QtQ
+👉 https://youtube.com/shorts/UIwz8LZi7Yc?feature=share
 
 ---
 
