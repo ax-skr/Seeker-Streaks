@@ -106,11 +106,9 @@ Most Web3 apps struggle with retention.
 
 Seeker Streaks focuses on:
 
-Daily habit formation
-
-Consistency as identity
-
-Visible long-term commitment
+- Daily habit formation
+- Consistency as identity
+- Visible long-term commitment
 
 The goal is not short-term activity spikes — but sustained engagement over time.
 
