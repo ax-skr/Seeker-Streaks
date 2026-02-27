@@ -67,6 +67,75 @@ By encouraging daily interaction, it strengthens engagement, retention, and on-c
 
 ---
 
+## 📊 Early Traction (Live Product)
+
+Seeker Streaks is a live product already in active use
+
+Within the first 11 days of launch:
+
+- 👛 ~1000 unique wallets verified
+- 🔁 Hundreds of daily check-ins recorded
+- ⭐ Public leaderboard actively updating
+- 🌍 Users across multiple countries
+- 📱 Predominantly mobile usage (Seeker ecosystem)
+- ⭐ dApp Store rating: 3.9★ with 150+ reviews
+
+➡️ This level of early adoption demonstrates real demand for a commitment-based identity layer within the Solana Mobile ecosystem.
+
+---
+
+## 📈 Usage Analytics (Vercel Dashboard)
+
+Live usage metrics are tracked via Vercel Web Analytics.
+
+Within the first days of analytics activation:
+
+- 👥 500+ visitors
+- 📄 1,000+ page views
+- 🌍 Multi-country participation
+- 📱 Predominantly mobile usage
+- 🔁 Repeat daily engagement
+
+➡️ These metrics demonstrate sustained interaction rather than one-time curiosity — validating the app’s retention-focused design.
+
+---
+
+## 🧠 Why This Matters
+
+Most Web3 apps struggle with retention.
+
+Seeker Streaks focuses on:
+
+- Daily habit formation
+- Consistency as identity
+- Visible long-term commitment
+
+The goal is not short-term activity spikes — but sustained engagement over time.
+
+---
+
+## 🧠 Behavioral Design Focus
+
+The system is intentionally minimal:
+
+Check in → Maintain streak → Protect streak → Climb leaderboard
+
+By reducing friction and emphasizing continuity, the app encourages long-term participation rather than one-time interaction.
+
+---
+
+## 🔮 Founders Era
+
+Early users form the foundational cohort of the Seeker Streaks ecosystem.
+
+Their streaks represent:
+
+- Early adoption
+- Long-term commitment
+- Potential future reputation signals
+
+---
+
 ## 🏗️ Built With
 
 - Next.js (App Router)
@@ -92,7 +161,7 @@ Compatible with Android devices and optimized for Solana Seeker.
 
 Demo video showcasing app functionality:
 
-👉 https://youtube.com/shorts/e8R0gh64QtQ
+👉 https://youtube.com/shorts/UIwz8LZi7Yc?feature=share
 
 ---
 
