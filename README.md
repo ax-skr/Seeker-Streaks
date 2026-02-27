@@ -78,7 +78,7 @@ Within the first 11 days of launch:
 - ⭐ Public leaderboard actively updating
 - 🌍 Users across multiple countries
 - 📱 Predominantly mobile usage (Seeker ecosystem)
-- ⭐ App Store rating: 3.9★ with 150+ reviews
+- ⭐ dApp Store rating: 3.9★ with 150+ reviews
 
 ➡️ This level of early adoption demonstrates real demand for a commitment-based identity layer within the Solana Mobile ecosystem.
 
