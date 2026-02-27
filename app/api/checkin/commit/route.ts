@@ -14,37 +14,6 @@ const TREASURY_WALLET = new PublicKey(
   process.env.TREASURY_WALLET || process.env.NEXT_PUBLIC_TREASURY_WALLET || ""
 );
 
-// --- NEW: best-effort refresh of skr_name after success (fire-and-forget) ---
-function getSiteBaseUrl(): string {
-  // Prefer an explicit site URL if you set one
-  const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (explicit) return explicit.startsWith("http") ? explicit : `https://${explicit}`;
-
-  // Vercel provides VERCEL_URL like "your-app.vercel.app"
-  const vercel = process.env.VERCEL_URL?.trim();
-  if (vercel) return vercel.startsWith("http") ? vercel : `https://${vercel}`;
-
-  // Local dev fallback
-  return "http://localhost:3000";
-}
-
-function refreshSkrName(wallet: string) {
-  if (!wallet) return;
-
-  // Fire-and-forget; never block check-in response
-  try {
-    const base = getSiteBaseUrl();
-    fetch(`${base}/api/resolve-names-batch`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ wallets: [wallet] }),
-      // don't care about caching here
-    }).catch(() => {});
-  } catch {
-    // ignore
-  }
-}
-
 function todayUTCISO(): string {
   const now = new Date();
   const d = new Date(
@@ -116,6 +85,11 @@ function minuteBucketUTC(): string {
   return `${yyyy}-${mm}-${dd}T${hh}:${mi}Z`;
 }
 
+/**
+ * Soft rate limit:
+ * - insert unique (wallet, route, bucket) into rate_limits
+ * - on duplicate (23505), treat as cooldown but return 200 (no “error” rows in Vercel)
+ */
 async function rateLimit(wallet: string, route: string) {
   const bucket = minuteBucketUTC();
 
@@ -142,13 +116,12 @@ function withProtectionAliases<T extends Record<string, any>>(payload: T) {
 
   return {
     ...payload,
-    // NEW aliases
     canProtect: typeof canRescue === "boolean" ? canRescue : undefined,
     protectionRequired: typeof canRescue === "boolean" ? canRescue : undefined,
     protectionCostSKR: typeof costSKR === "number" ? costSKR : undefined,
     protectionsLeft:
       typeof remainingRescue === "number" ? remainingRescue : undefined,
-    missedDays, // keep
+    missedDays,
   };
 }
 
@@ -160,26 +133,29 @@ export async function POST(req: NextRequest) {
     const rescueDays = Number(body?.rescueDays ?? 0);
     const txSig = String(body?.txSig ?? "").trim();
 
+    // For “no errors in logs”, return 200 with ok:false for most client mistakes too.
+    // If you prefer strict, you can switch some of these back to 400/403.
     if (!wallet || !action) {
-      return NextResponse.json(
-        { error: "wallet and action required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, status: "bad_request", message: "wallet and action required" });
     }
 
     const rl = await rateLimit(wallet, "/api/checkin/commit");
     if (!rl.ok) {
-      return NextResponse.json(
-        { error: "Too many requests. Try again in a moment." },
-        { status: 429 }
-      );
+      // no 429 => no red errors in Vercel
+      return NextResponse.json({
+        ok: false,
+        status: "cooldown",
+        message: "Too many requests. Try again in a moment.",
+        retryAfterSeconds: 10,
+      });
     }
 
     if (action === "rescue_paid" && rescueDays > MAX_RESCUE_DAYS) {
-      return NextResponse.json(
-        { error: "rescueDays exceeds MAX_RESCUE_DAYS" },
-        { status: 400 }
-      );
+      return NextResponse.json({
+        ok: false,
+        status: "bad_request",
+        message: "rescueDays exceeds MAX_RESCUE_DAYS",
+      });
     }
 
     const { data: user, error: userErr } = await supabaseAdmin
@@ -192,7 +168,7 @@ export async function POST(req: NextRequest) {
 
     if (userErr) {
       console.error("USER SELECT ERROR:", userErr);
-      return NextResponse.json({ error: "Failed to load user" }, { status: 500 });
+      return NextResponse.json({ ok: false, status: "server_error", message: "Failed to load user" }, { status: 500 });
     }
 
     let u = user ?? null;
@@ -215,20 +191,19 @@ export async function POST(req: NextRequest) {
 
       if (insErr || !inserted) {
         console.error("USER INSERT ERROR:", insErr);
-        return NextResponse.json(
-          { error: "Failed to create user" },
-          { status: 500 }
-        );
+        return NextResponse.json({ ok: false, status: "server_error", message: "Failed to create user" }, { status: 500 });
       }
 
       u = inserted;
     }
 
     if (!u?.verified_at) {
-      return NextResponse.json(
-        { error: "Wallet not verified. Verify in the app first." },
-        { status: 403 }
-      );
+      // return 200 so it doesn’t appear as “error” in Vercel
+      return NextResponse.json({
+        ok: false,
+        status: "not_verified",
+        message: "Wallet not verified. Verify in the app first.",
+      });
     }
 
     const today = todayUTCISO();
@@ -241,10 +216,14 @@ export async function POST(req: NextRequest) {
     // -------- CHECKIN --------
     if (action === "checkin") {
       if (u.last_checkin_date === today) {
-        return NextResponse.json(
-          { error: "Already checked in today" },
-          { status: 409 }
-        );
+        // ✅ “double check” should be 200, not 409
+        return NextResponse.json({
+          ok: true,
+          status: "already_checked_in",
+          action: "checkin",
+          streak: u.streak ?? 0,
+          points: u.points ?? 0,
+        });
       }
 
       if (u.last_checkin_date) {
@@ -261,10 +240,11 @@ export async function POST(req: NextRequest) {
             missedDays <= MAX_RESCUE_DAYS;
 
           if (canRescue) {
+            // ✅ rescue required is normal UX state, not an error -> 200
             return NextResponse.json(
               withProtectionAliases({
-                error: "rescue_required",
-                // NEW alias if your UI ever wants it:
+                ok: true,
+                status: "rescue_required",
                 protection_required: true,
                 missedDays,
                 remainingRescue,
@@ -272,8 +252,7 @@ export async function POST(req: NextRequest) {
                 treasury: TREASURY_WALLET.toBase58(),
                 mint: SKR_MINT.toBase58(),
                 canRescue,
-              }),
-              { status: 409 }
+              })
             );
           }
 
@@ -287,11 +266,9 @@ export async function POST(req: NextRequest) {
             })
             .eq("wallet", wallet);
 
-          // NEW: refresh name after success (best-effort)
-          refreshSkrName(wallet);
-
           return NextResponse.json({
             ok: true,
+            status: "streak_reset_due_to_missed_days",
             action: "checkin",
             streak: 1,
             points: u.points ?? 0,
@@ -319,14 +296,12 @@ export async function POST(req: NextRequest) {
 
       if (upErr) {
         console.error("CHECKIN UPDATE ERROR:", upErr);
-        return NextResponse.json({ error: "Failed to check in" }, { status: 500 });
+        return NextResponse.json({ ok: false, status: "server_error", message: "Failed to check in" }, { status: 500 });
       }
-
-      // NEW: refresh name after success (best-effort)
-      refreshSkrName(wallet);
 
       return NextResponse.json({
         ok: true,
+        status: "checked_in",
         action: "checkin",
         streak: newStreak,
         points: newPoints,
@@ -338,6 +313,7 @@ export async function POST(req: NextRequest) {
       if (u.last_checkin_date === today) {
         return NextResponse.json({
           ok: true,
+          status: "already_applied_today",
           action: "reset_streak",
           streak: u.streak ?? 1,
           points: u.points ?? 0,
@@ -359,17 +335,12 @@ export async function POST(req: NextRequest) {
 
       if (resetErr) {
         console.error("RESET STREAK ERROR:", resetErr);
-        return NextResponse.json(
-          { error: "Failed to reset streak" },
-          { status: 500 }
-        );
+        return NextResponse.json({ ok: false, status: "server_error", message: "Failed to reset streak" }, { status: 500 });
       }
-
-      // NEW: refresh name after success (best-effort)
-      refreshSkrName(wallet);
 
       return NextResponse.json({
         ok: true,
+        status: "streak_reset",
         action: "reset_streak",
         streak: 1,
         points: newPoints,
@@ -380,17 +351,17 @@ export async function POST(req: NextRequest) {
     }
 
     // -------- RESCUE (PAID) --------
-    // DB/action stays rescue_paid, UI calls it “protection”
     if (action === "rescue_paid") {
       if (!Number.isFinite(rescueDays) || rescueDays <= 0) {
-        return NextResponse.json(
-          { error: "rescueDays required (>0)" },
-          { status: 400 }
-        );
+        return NextResponse.json({
+          ok: false,
+          status: "bad_request",
+          message: "rescueDays required (>0)",
+        });
       }
 
       if (!txSig) {
-        return NextResponse.json({ error: "txSig required" }, { status: 400 });
+        return NextResponse.json({ ok: false, status: "bad_request", message: "txSig required" });
       }
 
       const missedDays = computeMissedDays();
@@ -403,17 +374,15 @@ export async function POST(req: NextRequest) {
         missedDays <= MAX_RESCUE_DAYS;
 
       if (!stillAllowed) {
-        return NextResponse.json(
-          { error: "Protection is not allowed right now." },
-          { status: 409 }
-        );
+        return NextResponse.json({
+          ok: false,
+          status: "not_allowed",
+          message: "Protection is not allowed right now.",
+        });
       }
 
       if (rescueDays !== missedDays) {
-        return NextResponse.json(
-          { error: "rescueDays mismatch" },
-          { status: 400 }
-        );
+        return NextResponse.json({ ok: false, status: "bad_request", message: "rescueDays mismatch" });
       }
 
       const conn = new Connection(getRpc(), "confirmed");
@@ -437,16 +406,18 @@ export async function POST(req: NextRequest) {
       });
 
       if (!tx) {
-        return NextResponse.json(
-          { error: "Transaction not confirmed yet." },
-          { status: 409 }
-        );
+        return NextResponse.json({
+          ok: false,
+          status: "tx_not_confirmed",
+          message: "Transaction not confirmed yet.",
+        });
       }
       if (tx.meta?.err) {
-        return NextResponse.json(
-          { error: "Transaction failed on-chain." },
-          { status: 409 }
-        );
+        return NextResponse.json({
+          ok: false,
+          status: "tx_failed",
+          message: "Transaction failed on-chain.",
+        });
       }
 
       const mintStr = SKR_MINT.toBase58();
@@ -468,10 +439,12 @@ export async function POST(req: NextRequest) {
       );
 
       if (!okPay) {
-        return NextResponse.json(
-          { error: "Payment verification failed." },
-          { status: 403 }
-        );
+        // Still “not applied”, but return 200 so it’s not a Vercel “error row”
+        return NextResponse.json({
+          ok: false,
+          status: "payment_verification_failed",
+          message: "Payment verification failed.",
+        });
       }
 
       const paymentPayload = {
@@ -490,18 +463,7 @@ export async function POST(req: NextRequest) {
 
       if (upsertErr) {
         console.error("SKR PAYMENTS UPSERT ERROR:", upsertErr);
-        return NextResponse.json(
-          {
-            error: "Failed to record payment.",
-            supabase: {
-              message: upsertErr.message,
-              details: (upsertErr as any).details,
-              hint: (upsertErr as any).hint,
-              code: (upsertErr as any).code,
-            },
-          },
-          { status: 500 }
-        );
+        return NextResponse.json({ ok: false, status: "server_error", message: "Failed to record payment." }, { status: 500 });
       }
 
       const { data: freshUser, error: fuErr } = await supabaseAdmin
@@ -511,20 +473,14 @@ export async function POST(req: NextRequest) {
         .maybeSingle();
 
       if (fuErr || !freshUser) {
-        return NextResponse.json(
-          { error: "Failed to refresh user" },
-          { status: 500 }
-        );
+        return NextResponse.json({ ok: false, status: "server_error", message: "Failed to refresh user" }, { status: 500 });
       }
 
       if (freshUser.last_checkin_date === today) {
         const usedNow = freshUser.rescued_days_used_run ?? 0;
-
-        // NEW: refresh name after success (best-effort)
-        refreshSkrName(wallet);
-
         return NextResponse.json({
           ok: true,
+          status: "already_applied_today",
           action: "rescue_paid",
           rescuedDays: rescueDays,
           protectedDays: rescueDays,
@@ -546,19 +502,14 @@ export async function POST(req: NextRequest) {
 
       if (applyErr) {
         console.error("RESCUE APPLY ERROR:", applyErr);
-        return NextResponse.json(
-          { error: "Failed to apply protection" },
-          { status: 500 }
-        );
+        return NextResponse.json({ ok: false, status: "server_error", message: "Failed to apply protection" }, { status: 500 });
       }
 
       const left = Math.max(0, MAX_RESCUE_DAYS - (usedNow + rescueDays));
 
-      // NEW: refresh name after success (best-effort)
-      refreshSkrName(wallet);
-
       return NextResponse.json({
         ok: true,
+        status: "protected",
         action: "rescue_paid",
         rescuedDays: rescueDays,
         protectedDays: rescueDays,
@@ -567,9 +518,9 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+    return NextResponse.json({ ok: false, status: "bad_request", message: "Unknown action" });
   } catch (e) {
     console.error("CHECKIN COMMIT ERROR:", e);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ ok: false, status: "server_error", message: "Internal server error" }, { status: 500 });
   }
 }
