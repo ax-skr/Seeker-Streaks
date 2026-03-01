@@ -90,8 +90,8 @@ Live usage metrics are tracked via Vercel Web Analytics.
 
 Within the first days of analytics activation:
 
-- 👥 500+ visitors
-- 📄 1,000+ page views
+- 👥 2,000+ visitors
+- 📄 4,500+ page views
 - 🌍 Multi-country participation
 - 📱 Predominantly mobile usage
 - 🔁 Repeat daily engagement
