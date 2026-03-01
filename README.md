@@ -88,7 +88,7 @@ Within the first 11 days of launch:
 
 Live usage metrics are tracked via Vercel Web Analytics.
 
-Since analytics activation (Feb 25):
+Since analytics activation (Feb 25 → Mar 1, 2026):
 
 - 👥 2,000+ visitors
 - 📄 4,500+ page views
