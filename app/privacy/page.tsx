@@ -5,33 +5,63 @@ export default function PrivacyPage() {
         <h1 className="text-4xl font-bold">Privacy Policy</h1>
 
         <p>
-          Seeker Streaks respects your privacy. This policy explains what data
-          we collect and how it is used.
+          This Privacy Policy explains how Seeker Streaks ("Application")
+          processes information. The Application is operated from
+          England, United Kingdom.
         </p>
 
-        <h2 className="text-2xl font-semibold">Wallet Information</h2>
+        <h2 className="text-2xl font-semibold">Data Collected</h2>
         <p>
-          We collect public wallet addresses to enable authentication,
-          streak tracking, and leaderboard functionality. Private keys are
-          never accessed or stored.
+          The Application collects public blockchain wallet addresses,
+          check-in timestamps, streak data, leaderboard data, and limited
+          technical usage information necessary for operation.
         </p>
 
-        <h2 className="text-2xl font-semibold">Usage Data</h2>
+        <h2 className="text-2xl font-semibold">Private Keys</h2>
         <p>
-          Basic usage data may be collected to improve performance and user
-          experience.
-        </p>
-        
-        <h2 className="text-2xl font-semibold">Third-Party Services</h2>
-        <p> 
-          Seeker Streaks may use third-party services such as hosting providers and analytics tools necessary for operation.
-
+          The Application does not access, request, store, or control
+          private keys.
         </p>
 
-        <h2 className="text-2xl font-semibold">Data Storage</h2>
+        <h2 className="text-2xl font-semibold">Purpose of Processing</h2>
         <p>
-          Data is securely stored using backend services required to operate
-          the application.
+          Data is processed to provide authentication, streak tracking,
+          leaderboard functionality, fraud prevention, and service
+          stability.
+        </p>
+
+        <h2 className="text-2xl font-semibold">Legal Basis (UK GDPR)</h2>
+        <p>
+          Where applicable, data is processed under legitimate interest
+          for the purpose of operating the Application in accordance
+          with UK data protection laws.
+        </p>
+
+        <h2 className="text-2xl font-semibold">Third-Party Infrastructure</h2>
+        <p>
+          The Application relies on third-party infrastructure providers
+          such as hosting platforms, database services, and blockchain
+          RPC providers. These services may process limited technical
+          data required for functionality.
+        </p>
+
+        <h2 className="text-2xl font-semibold">Data Retention</h2>
+        <p>
+          Wallet and streak data are retained as long as necessary to
+          provide leaderboard and streak functionality unless deletion
+          is legally required.
+        </p>
+
+        <h2 className="text-2xl font-semibold">Security</h2>
+        <p>
+          Reasonable technical measures are implemented to protect stored
+          information. However, no system can guarantee absolute security.
+        </p>
+
+        <h2 className="text-2xl font-semibold">Your Rights</h2>
+        <p>
+          Depending on your jurisdiction, you may have rights regarding
+          access or correction of certain personal data.
         </p>
 
         <h2 className="text-2xl font-semibold">Contact</h2>
