@@ -16,6 +16,11 @@ import {
   createAssociatedTokenAccountIdempotentInstruction,
 } from "@solana/spl-token";
 
+/* ---------------- TERMS UPDATE BANNER CONFIG ---------------- */
+const TERMS_URL = "https://seeker-streaks.vercel.app/terms";
+const TERMS_UPDATED_UNTIL_UTC = "2026-03-08T15:00:00Z"; // 8th March 2026, 3pm UTC
+/* ----------------------------------------------------------- */
+
 const WalletMultiButton = dynamic(
   async () => (await import("@solana/wallet-adapter-react-ui")).WalletMultiButton,
   { ssr: false }
@@ -104,7 +109,16 @@ export default function Home() {
   const [paying, setPaying] = useState(false);
   const [resetting, setResetting] = useState(false);
 
+  // ---------------- banner state (UI only; no functionality changes) ----------------
+  const [showTermsBanner, setShowTermsBanner] = useState(false);
+
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    const until = new Date(TERMS_UPDATED_UNTIL_UTC).getTime();
+    setShowTermsBanner(Date.now() < until);
+  }, []);
+  // -------------------------------------------------------------------------------
 
   useEffect(() => {
     setSessionVerified(false);
@@ -457,6 +471,31 @@ export default function Home() {
           Daily streaks for Solana Seeker users
         </p>
 
+        {/* ---------------- TERMS UPDATE BANNER (UI ONLY) ---------------- */}
+        {showTermsBanner && (
+          <a
+            href={TERMS_URL}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display: "block",
+              marginBottom: 16,
+              padding: 12,
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(255,255,255,0.05)",
+              fontSize: 13,
+              textDecoration: "none",
+              color: "#e5e7eb",
+            }}
+          >
+            <strong>Terms updated:</strong> Continued use of Seeker Streaks
+            constitutes acceptance of the updated Terms.{" "}
+            <span style={{ textDecoration: "underline" }}>View Terms →</span>
+          </a>
+        )}
+        {/* -------------------------------------------------------------- */}
+
         <div
           style={{
             background: "#020617",
@@ -470,7 +509,8 @@ export default function Home() {
 
           {connected && (
             <div style={{ marginTop: 12, fontSize: 14, opacity: 0.85 }}>
-              Connected: <span style={{ fontWeight: 800 }}>{connectedLabel}</span>
+              Connected:{" "}
+              <span style={{ fontWeight: 800 }}>{connectedLabel}</span>
 
               {!skrName && (
                 <div style={{ marginTop: 8, fontSize: 12, opacity: 0.75 }}>
@@ -561,7 +601,9 @@ export default function Home() {
                 opacity: paying || resetting ? 0.7 : 1,
               }}
             >
-              {paying ? "Paying…" : `Pay ${quote!.protectionCostSKR ?? quote!.costSKR} SKR`}
+              {paying
+                ? "Paying…"
+                : `Pay ${quote!.protectionCostSKR ?? quote!.costSKR} SKR`}
             </button>
 
             <button
