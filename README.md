@@ -123,7 +123,7 @@ Since analytics activation (Feb 25 → Mar 1, 2026):
 
 ---
 
-## 🧠 Why This Matters
+## 🧠 Retention Thesis
 
 Most Web3 apps struggle with retention.
 
