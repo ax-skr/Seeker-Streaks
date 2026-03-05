@@ -242,4 +242,4 @@ Track: Mobile
 
 ## 👤 Author
 
-ax.skr
+ax.skr — Creator of Seeker Streaks
