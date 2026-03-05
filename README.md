@@ -28,9 +28,7 @@ The fastest way to experience Seeker Streaks:
 
 ⏱ Full test time: ~40 seconds
 
-If testing outside a Solana Seeker device, the Android APK can be downloaded from the **Releases** section.
-
-Note: Wallet connection requires the native Solana Mobile Seed Vault wallet available on Solana Seeker devices.
+Note: Seeker Streaks requires the native Solana Mobile Seed Vault wallet and is best tested on a Solana Seeker device.
 
 ---
 
@@ -178,7 +176,9 @@ Installable build available via GitHub Releases:
 
 👉 See **Releases** section for APK download
 
-Compatible with Android devices and optimized for Solana Seeker.
+The APK can be installed on Android devices.
+
+Note: Wallet connection requires the native Solana Mobile Seed Vault wallet (available on Solana Seeker devices).
 
 ---
 
