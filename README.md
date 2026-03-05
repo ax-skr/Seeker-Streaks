@@ -5,7 +5,7 @@
 ![Solana](https://img.shields.io/badge/blockchain-Solana-purple)
 ![Status](https://img.shields.io/badge/status-live-success)
 
-**A commitment layer for the Solana Mobile ecosystem**
+**A daily commitment layer for the Solana Mobile ecosystem**
 
 Seeker Streaks is a mobile-first Web3 commitment app built for the Solana Mobile ecosystem.  
 Users connect and verify their wallet, check in once per day, maintain streaks, and track their position on a public leaderboard.
