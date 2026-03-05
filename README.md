@@ -1,4 +1,9 @@
 # 🚀 Seeker Streaks
+![Next.js](https://img.shields.io/badge/Next.js-14-black)
+![TypeScript](https://img.shields.io/badge/TypeScript-Strict-blue)
+![Supabase](https://img.shields.io/badge/backend-Supabase-green)
+![Solana](https://img.shields.io/badge/blockchain-Solana-purple)
+![Status](https://img.shields.io/badge/status-live-success)
 
 **A commitment layer for the Solana Mobile ecosystem**
 
