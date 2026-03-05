@@ -1,11 +1,29 @@
 # 🚀 Seeker Streaks
 
-**A daily commitment layer for Solana Mobile users**
+**A commitment layer for the Solana Mobile ecosystem**
 
 Seeker Streaks is a mobile-first Web3 commitment app built for the Solana Mobile ecosystem.  
 Users connect and verify their wallet, check in once per day, maintain streaks, and track their position on a public leaderboard.
 
 Built for the **MONOLITH — Solana Mobile Hackathon by Solana Mobile × RadiantsDAO**.
+
+---
+
+## ⚡ Judge Quick Test (30–40 seconds)
+
+The fastest way to experience Seeker Streaks:
+
+1. Open the **Solana Seeker dApp Store**
+2. Search for **Seeker Streaks**
+3. Install and open the dApp
+4. Connect your Solana wallet
+5. Verify your wallet signature
+6. Perform your first **daily check-in**
+7. View your position on the **public leaderboard**
+
+⏱ Full test time: ~40 seconds
+
+If testing outside a Seeker device, the Android APK is available in the **Releases** section.
 
 ---
 
@@ -170,6 +188,26 @@ Demo video showcasing app functionality:
 Seeker Streaks — Behavioral Identity Layer for Solana Mobile
 
 👉 https://drive.google.com/file/d/1B6wd2_llCDNOtyPWadODjrWvCVOgTIx4/view
+
+---
+
+## 🔐 Security
+
+Sensitive credentials are **never stored in the repository**.
+
+All secrets are managed via environment variables and deployment configuration.
+
+Environment variables used by the project include:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SOLANA_RPC_URL`
+
+These values are injected through **Vercel environment variables** or local `.env` files during development.
+
+The Supabase service role key is used **server-side only** and is never exposed to the client.
+
+No private keys, wallet credentials, or sensitive infrastructure secrets are committed to the repository.
 
 ---
 
