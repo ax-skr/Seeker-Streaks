@@ -409,14 +409,24 @@ export default function Home() {
 
       const latest = await rpcConn.getLatestBlockhash("confirmed");
 
-      await rpcConn.confirmTransaction(
-      {
-      signature: sig,
-      blockhash: latest.blockhash,
-     lastValidBlockHeight: latest.lastValidBlockHeight,
-     },
-      "confirmed"
-      );
+      try {
+  await rpcConn.confirmTransaction(
+    { signature: sig, blockhash, lastValidBlockHeight },
+    "confirmed"
+  );
+} catch (confirmError) {
+  console.warn("confirmTransaction failed, checking signature status:", confirmError);
+
+  const status = await rpcConn.getSignatureStatus(sig, {
+    searchTransactionHistory: true,
+  });
+
+  const value = status.value;
+
+  if (!value || value.err) {
+    throw confirmError;
+  }
+}
 
       setMsg("Payment sent. Verifying…");
 
