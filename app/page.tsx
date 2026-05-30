@@ -455,21 +455,14 @@ export default function Home() {
     Number(status?.protectionsLeft ?? status?.remainingRescue ?? 0);
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background:
-          "radial-gradient(1200px 600px at 10% -10%, #6d28d9 0%, transparent 40%), radial-gradient(800px 400px at 90% 10%, #22d3ee 0%, transparent 40%), #020617",
-        color: "#e5e7eb",
-        padding: 24,
-        fontFamily: "system-ui",
-      }}
-    >
-      <div style={{ maxWidth: 480, margin: "0 auto" }}>
-        <h1 style={{ fontSize: 28, fontWeight: 800 }}>Seeker Streaks</h1>
-        <p style={{ opacity: 0.75, marginBottom: 20 }}>
-          Daily streaks for Solana Seeker users
-        </p>
+    <main className="ssShell">
+      <section className="ssCard">
+        <div className="ssHero">
+          <div className="ssOrbit" />
+          <div className="ssKicker">Proof of Consistency</div>
+          <h1>Seeker Streaks</h1>
+          <p>Daily streaks for Solana Seeker users</p>
+        </div>
 
         {/* ---------------- TERMS UPDATE BANNER (UI ONLY) ---------------- */}
         {showTermsBanner && (
@@ -477,43 +470,24 @@ export default function Home() {
             href={TERMS_URL}
             target="_blank"
             rel="noreferrer"
-            style={{
-              display: "block",
-              marginBottom: 16,
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "rgba(255,255,255,0.05)",
-              fontSize: 13,
-              textDecoration: "none",
-              color: "#e5e7eb",
-            }}
+            className="ssNotice"
           >
             <strong>Terms updated:</strong> Continued use of Seeker Streaks
-            constitutes acceptance of the updated Terms.{" "}
-            <span style={{ textDecoration: "underline" }}>View Terms →</span>
+            constitutes acceptance of the updated Terms. <span>View Terms →</span>
           </a>
         )}
         {/* -------------------------------------------------------------- */}
 
-        <div
-          style={{
-            background: "#020617",
-            border: "1px solid rgba(255,255,255,0.08)",
-            borderRadius: 14,
-            padding: 16,
-            marginBottom: 16,
-          }}
-        >
+        <div className="ssPanel ssWalletPanel">
           <WalletMultiButton />
 
           {connected && (
-            <div style={{ marginTop: 12, fontSize: 14, opacity: 0.85 }}>
-              Connected:{" "}
-              <span style={{ fontWeight: 800 }}>{connectedLabel}</span>
+            <div className="ssConnected">
+              <span>Connected:</span>{" "}
+              <strong>{connectedLabel}</strong>
 
               {!skrName && (
-                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.75 }}>
+                <div className="ssHint">
                   Set your .skr as Main Domain in AllDomains to display your name
                 </div>
               )}
@@ -524,82 +498,51 @@ export default function Home() {
             <button
               onClick={verifyWallet}
               disabled={verifying}
-              style={{
-                marginTop: 12,
-                width: "100%",
-                padding: "12px",
-                borderRadius: 10,
-                background: "linear-gradient(90deg,#7c3aed,#22d3ee)",
-                border: "none",
-                color: "#020617",
-                fontWeight: 700,
-                cursor: "pointer",
-                opacity: verifying ? 0.7 : 1,
-              }}
+              className="ssButton ssButtonPrimary"
             >
               {verifying ? "Verifying…" : "Verify wallet"}
             </button>
           )}
 
           {sessionVerified && (
-            <div style={{ marginTop: 12, fontWeight: 700, color: "#22d3ee" }}>
-              Verified ✓
+            <div className="ssVerified">
+              <span className="ssVerifiedDot" />
+              Verified
             </div>
           )}
         </div>
 
         {status && (
-          <div
-            style={{
-              background: "#020617",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 14,
-              padding: 16,
-              marginBottom: 16,
-            }}
-          >
-            <div>
-              🔥 Streak: <strong>{status.streak}</strong>
+          <div className="ssStats">
+            <div className="ssStat">
+              <span>Streak</span>
+              <strong>{status.streak}</strong>
             </div>
-            <div>⏳ Missed days: {status.missedDays}</div>
-            <div>🛡️ Protections left: {protectionsLeft}</div>
+            <div className="ssStat">
+              <span>Missed days</span>
+              <strong>{status.missedDays}</strong>
+            </div>
+            <div className="ssStat">
+              <span>Protections left</span>
+              <strong>{protectionsLeft}</strong>
+            </div>
           </div>
         )}
 
         {showProtectionCard && (
-          <div
-            style={{
-              background: "#020617",
-              border: "1px solid rgba(255,255,255,0.12)",
-              borderRadius: 14,
-              padding: 16,
-              marginBottom: 16,
-            }}
-          >
-            <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>
-              🛡️ Protect your streak
-            </div>
+          <div className="ssPanel ssProtection">
+            <div className="ssPanelTitle">Protect your streak</div>
 
-            <div style={{ opacity: 0.85, marginBottom: 12 }}>
+            <p>
               You missed <strong>{quote!.missedDays}</strong> day(s). Pay{" "}
-              <strong>{quote!.protectionCostSKR ?? quote!.costSKR} SKR</strong> to
-              protect your current streak.
-            </div>
+              <strong>{quote!.protectionCostSKR ?? quote!.costSKR} SKR</strong>{" "}
+              to protect your current streak.
+            </p>
 
             <button
               onClick={payProtection}
               disabled={paying || resetting}
-              style={{
-                width: "100%",
-                padding: "14px",
-                borderRadius: 12,
-                background: "linear-gradient(90deg,#22d3ee,#7c3aed)",
-                border: "none",
-                color: "#020617",
-                fontWeight: 900,
-                cursor: paying || resetting ? "not-allowed" : "pointer",
-                opacity: paying || resetting ? 0.7 : 1,
-              }}
+              className="ssButton ssButtonPrimary"
             >
               {paying
                 ? "Paying…"
@@ -609,30 +552,12 @@ export default function Home() {
             <button
               onClick={resetStreak}
               disabled={resetting || paying}
-              style={{
-                width: "100%",
-                padding: "12px",
-                borderRadius: 12,
-                marginTop: 10,
-                background: "transparent",
-                border: "1px solid rgba(255,255,255,0.18)",
-                color: "#e5e7eb",
-                fontWeight: 900,
-                cursor: resetting || paying ? "not-allowed" : "pointer",
-                opacity: resetting || paying ? 0.7 : 1,
-              }}
+              className="ssButton ssButtonGhost"
             >
               {resetting ? "Resetting…" : "Reset streak (free)"}
             </button>
 
-            <div
-              style={{
-                marginTop: 10,
-                opacity: 0.75,
-                fontSize: 12,
-                lineHeight: 1.4,
-              }}
-            >
+            <div className="ssSmallText">
               Resets your streak to <strong>1</strong> but{" "}
               <strong>refreshes protections</strong>. You still keep your points.
             </div>
@@ -642,47 +567,443 @@ export default function Home() {
         <button
           onClick={checkIn}
           disabled={!sessionVerified || showProtectionCard}
-          style={{
-            width: "100%",
-            padding: "14px",
-            borderRadius: 12,
-            background:
-              !sessionVerified || showProtectionCard
-                ? "#1f2933"
-                : "linear-gradient(90deg,#22d3ee,#7c3aed)",
-            border: "none",
-            color: !sessionVerified || showProtectionCard ? "#6b7280" : "#020617",
-            fontWeight: 800,
-            cursor:
-              !sessionVerified || showProtectionCard ? "not-allowed" : "pointer",
-            marginBottom: 12,
-          }}
+          className={`ssButton ssCheckIn ${
+            !sessionVerified || showProtectionCard ? "disabled" : ""
+          }`}
         >
           {showProtectionCard ? "Protection required" : "Check in"}
         </button>
 
-        {msg && (
-          <div style={{ textAlign: "center", opacity: 0.9, marginBottom: 10 }}>
-            {msg}
-          </div>
-        )}
+        {msg && <div className="ssMessage">{msg}</div>}
 
-        <Link
-          href="/leaderboard"
-          style={{
-            display: "block",
-            marginTop: 10,
-            textAlign: "center",
-            padding: "10px",
-            borderRadius: 10,
-            border: "1px solid rgba(255,255,255,0.12)",
-            color: "#e5e7eb",
-            textDecoration: "none",
-          }}
-        >
-          View leaderboard →
-        </Link>
-      </div>
+        <div className="ssNavButtons">
+          <Link href="/leaderboard" className="ssNavButton ssNavPrimary">
+            <span>
+              <strong>All-Time Leaderboard</strong>
+              <small>The line continues</small>
+            </span>
+            <b>→</b>
+          </Link>
+
+          <Link href="/founder-era" className="ssNavButton ssNavFounder">
+            <span>
+              <strong>Founder Era Snapshot</strong>
+              <small>104 days preserved</small>
+            </span>
+            <b>→</b>
+          </Link>
+        </div>
+      </section>
+
+      <style>{`
+        :root {
+          --ss-bg: #030412;
+          --ss-card: rgba(7, 9, 24, 0.74);
+          --ss-panel: rgba(255, 255, 255, 0.055);
+          --ss-line: rgba(255, 255, 255, 0.13);
+          --ss-text: #f3f7ff;
+          --ss-muted: rgba(243, 247, 255, 0.68);
+          --ss-cyan: #27e7ff;
+          --ss-violet: #8c52ff;
+          --ss-pink: #ff3bd4;
+          --ss-gold: #ffd66b;
+          --ss-green: #00ffa3;
+        }
+
+        @keyframes ssDrift {
+          0%, 100% { transform: scale(1.02) translate3d(0, 0, 0); }
+          50% { transform: scale(1.06) translate3d(-10px, -8px, 0); }
+        }
+
+        @keyframes ssPulse {
+          0%, 100% { opacity: .58; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.04); }
+        }
+
+        .ssShell {
+          min-height: 100vh;
+          width: 100%;
+          position: relative;
+          overflow: hidden;
+          display: flex;
+          justify-content: center;
+          align-items: flex-start;
+          padding: 24px;
+          color: var(--ss-text);
+          font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+          background: var(--ss-bg);
+        }
+
+        .ssShell::before {
+          content: "";
+          position: fixed;
+          inset: -32px;
+          pointer-events: none;
+          background-image:
+            linear-gradient(180deg, rgba(0,0,0,.08), rgba(0,0,0,.70)),
+            radial-gradient(800px 450px at 18% 8%, rgba(255,59,212,.24), transparent 62%),
+            radial-gradient(760px 430px at 86% 10%, rgba(39,231,255,.25), transparent 62%),
+            radial-gradient(700px 480px at 54% 100%, rgba(140,82,255,.23), transparent 68%),
+            image-set(url("/leaderboard-cosmic.png") 1x, url("/leaderboard-cosmic@2x.png") 2x),
+            radial-gradient(rgba(255,255,255,.12) 1px, transparent 1px);
+          background-size: auto, auto, auto, auto, cover, 150px 150px;
+          background-position: center;
+          background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat;
+          filter: saturate(1.08) contrast(1.06);
+          animation: ssDrift 32s ease-in-out infinite;
+          transform-origin: center;
+        }
+
+        .ssShell::after {
+          content: "";
+          position: fixed;
+          inset: 0;
+          pointer-events: none;
+          background:
+            linear-gradient(180deg, transparent, rgba(3,4,18,.38)),
+            radial-gradient(circle at 24% 22%, rgba(255,255,255,.50) 0 1px, transparent 2px),
+            radial-gradient(circle at 78% 28%, rgba(39,231,255,.40) 0 1px, transparent 2px),
+            radial-gradient(circle at 52% 76%, rgba(255,59,212,.30) 0 1px, transparent 2px);
+          background-size: auto, 520px 520px, 700px 700px, 860px 860px;
+          mix-blend-mode: screen;
+          opacity: .32;
+        }
+
+        .ssCard {
+          width: min(480px, 100%);
+          position: relative;
+          z-index: 1;
+          border: 1px solid rgba(255,255,255,.16);
+          border-radius: 28px;
+          padding: 18px;
+          background:
+            radial-gradient(760px 260px at 18% 0%, rgba(255,59,212,.14), transparent 62%),
+            radial-gradient(760px 260px at 88% 0%, rgba(39,231,255,.14), transparent 62%),
+            linear-gradient(180deg, rgba(8,10,28,.82), rgba(4,6,20,.76));
+          backdrop-filter: blur(20px) saturate(1.15);
+          -webkit-backdrop-filter: blur(20px) saturate(1.15);
+          box-shadow:
+            0 30px 120px rgba(0,0,0,.72),
+            inset 0 1px 0 rgba(255,255,255,.08);
+          overflow: hidden;
+        }
+
+        .ssCard::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          border-radius: inherit;
+          padding: 1px;
+          background: linear-gradient(140deg, rgba(255,59,212,.42), rgba(39,231,255,.36), rgba(255,214,107,.20));
+          -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          -webkit-mask-composite: xor;
+          mask-composite: exclude;
+        }
+
+        .ssHero {
+          position: relative;
+          padding: 8px 4px 18px;
+        }
+
+        .ssOrbit {
+          position: absolute;
+          right: -82px;
+          top: -100px;
+          width: 220px;
+          height: 220px;
+          border: 1px solid rgba(39,231,255,.18);
+          border-radius: 999px;
+          box-shadow: inset 0 0 42px rgba(140,82,255,.14), 0 0 70px rgba(39,231,255,.10);
+          pointer-events: none;
+        }
+
+        .ssKicker {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: 1.6px;
+          text-transform: uppercase;
+          color: var(--ss-muted);
+        }
+
+        .ssKicker::before {
+          content: "";
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: linear-gradient(135deg, var(--ss-pink), var(--ss-cyan));
+          box-shadow: 0 0 20px rgba(39,231,255,.7);
+          animation: ssPulse 3s ease-in-out infinite;
+        }
+
+        .ssHero h1 {
+          margin: 10px 0 8px;
+          font-size: clamp(34px, 9vw, 52px);
+          line-height: .92;
+          letter-spacing: -.06em;
+          font-weight: 1000;
+        }
+
+        .ssHero p {
+          margin: 0;
+          color: var(--ss-muted);
+          font-size: 15px;
+        }
+
+        .ssNotice,
+        .ssPanel,
+        .ssStats,
+        .ssNavButton {
+          border: 1px solid var(--ss-line);
+          background: var(--ss-panel);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.055);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+        }
+
+        .ssNotice {
+          display: block;
+          margin-bottom: 14px;
+          padding: 12px;
+          border-radius: 16px;
+          font-size: 13px;
+          text-decoration: none;
+          color: var(--ss-text);
+        }
+
+        .ssNotice span { text-decoration: underline; }
+
+        .ssPanel {
+          border-radius: 20px;
+          padding: 16px;
+          margin-bottom: 14px;
+        }
+
+        .ssWalletPanel :global(.wallet-adapter-button) {
+          width: 100%;
+          justify-content: center;
+          border-radius: 14px !important;
+          background: linear-gradient(135deg, rgba(140,82,255,.95), rgba(39,231,255,.90)) !important;
+          color: #050713 !important;
+          font-weight: 900 !important;
+          box-shadow: 0 16px 42px rgba(39,231,255,.13) !important;
+        }
+
+        .ssConnected {
+          margin-top: 12px;
+          font-size: 14px;
+          color: rgba(243,247,255,.82);
+        }
+
+        .ssConnected strong { color: white; }
+
+        .ssHint {
+          margin-top: 8px;
+          font-size: 12px;
+          color: var(--ss-muted);
+          line-height: 1.4;
+        }
+
+        .ssVerified {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 12px;
+          font-weight: 900;
+          color: var(--ss-cyan);
+        }
+
+        .ssVerifiedDot {
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: var(--ss-green);
+          box-shadow: 0 0 16px rgba(0,255,163,.68);
+        }
+
+        .ssStats {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 8px;
+          border-radius: 20px;
+          padding: 10px;
+          margin-bottom: 14px;
+        }
+
+        .ssStat {
+          min-width: 0;
+          padding: 12px 8px;
+          border-radius: 15px;
+          background:
+            radial-gradient(180px 70px at 50% 0%, rgba(39,231,255,.10), transparent 70%),
+            rgba(0,0,0,.20);
+          text-align: center;
+        }
+
+        .ssStat span {
+          display: block;
+          color: var(--ss-muted);
+          font-size: 11px;
+          line-height: 1.2;
+        }
+
+        .ssStat strong {
+          display: block;
+          margin-top: 6px;
+          font-size: 20px;
+          line-height: 1;
+          font-weight: 1000;
+        }
+
+        .ssPanelTitle {
+          font-size: 17px;
+          font-weight: 1000;
+          margin-bottom: 6px;
+        }
+
+        .ssProtection p {
+          margin: 0 0 12px;
+          color: rgba(243,247,255,.82);
+          line-height: 1.45;
+        }
+
+        .ssButton {
+          width: 100%;
+          min-height: 46px;
+          border: 0;
+          border-radius: 15px;
+          padding: 12px 14px;
+          font-weight: 950;
+          cursor: pointer;
+          transition: transform .14s ease, opacity .14s ease, box-shadow .14s ease;
+        }
+
+        .ssButton:hover:not(:disabled) { transform: translateY(-1px); }
+        .ssButton:active:not(:disabled) { transform: translateY(0) scale(.99); }
+
+        .ssButtonPrimary {
+          margin-top: 12px;
+          background: linear-gradient(135deg, var(--ss-pink), var(--ss-violet) 48%, var(--ss-cyan));
+          color: #050713;
+          box-shadow: 0 18px 44px rgba(39,231,255,.14);
+        }
+
+        .ssButtonGhost {
+          margin-top: 10px;
+          color: var(--ss-text);
+          border: 1px solid rgba(255,255,255,.16);
+          background: rgba(255,255,255,.045);
+        }
+
+        .ssCheckIn {
+          margin-bottom: 12px;
+          background: linear-gradient(135deg, var(--ss-cyan), var(--ss-violet));
+          color: #050713;
+          box-shadow: 0 18px 44px rgba(39,231,255,.14);
+        }
+
+        .ssCheckIn.disabled {
+          background: rgba(255,255,255,.08);
+          color: rgba(243,247,255,.38);
+          cursor: not-allowed;
+          box-shadow: none;
+        }
+
+        .ssSmallText {
+          margin-top: 10px;
+          color: var(--ss-muted);
+          font-size: 12px;
+          line-height: 1.45;
+        }
+
+        .ssMessage {
+          text-align: center;
+          color: rgba(243,247,255,.86);
+          margin: 0 0 12px;
+          font-size: 14px;
+        }
+
+        .ssNavButtons {
+          display: grid;
+          gap: 10px;
+        }
+
+        .ssNavButton {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 14px;
+          border-radius: 18px;
+          text-decoration: none;
+          color: var(--ss-text);
+          transition: transform .14s ease, border-color .14s ease, background .14s ease, box-shadow .14s ease;
+        }
+
+        .ssNavButton:hover {
+          transform: translateY(-1px);
+          background: rgba(255,255,255,.075);
+        }
+
+        .ssNavButton strong,
+        .ssNavButton small {
+          display: block;
+        }
+
+        .ssNavButton strong {
+          font-size: 15px;
+          font-weight: 1000;
+        }
+
+        .ssNavButton small {
+          margin-top: 3px;
+          font-size: 12px;
+          color: var(--ss-muted);
+        }
+
+        .ssNavButton b {
+          font-size: 20px;
+          color: var(--ss-cyan);
+        }
+
+        .ssNavPrimary {
+          border-color: rgba(39,231,255,.22);
+          background:
+            radial-gradient(320px 90px at 0% 50%, rgba(39,231,255,.14), transparent 70%),
+            rgba(255,255,255,.052);
+        }
+
+        .ssNavFounder {
+          border-color: rgba(255,214,107,.28);
+          background:
+            radial-gradient(320px 90px at 0% 50%, rgba(255,214,107,.14), transparent 70%),
+            radial-gradient(260px 80px at 100% 50%, rgba(255,59,212,.09), transparent 70%),
+            rgba(255,255,255,.052);
+        }
+
+        .ssNavFounder b { color: var(--ss-gold); }
+
+        @media (max-width: 430px) {
+          .ssShell { padding: 14px; }
+          .ssCard { border-radius: 24px; padding: 15px; }
+          .ssStats { grid-template-columns: 1fr; }
+          .ssHero h1 { font-size: 38px; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .ssShell::before,
+          .ssKicker::before {
+            animation: none !important;
+          }
+          .ssButton,
+          .ssNavButton {
+            transition: none !important;
+          }
+        }
+      `}</style>
     </main>
   );
 }
