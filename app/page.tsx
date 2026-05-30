@@ -407,9 +407,15 @@ export default function Home() {
         preflightCommitment: "confirmed",
       });
 
+      const latest = await rpcConn.getLatestBlockhash("confirmed");
+
       await rpcConn.confirmTransaction(
-        { signature: sig, blockhash, lastValidBlockHeight },
-        "confirmed"
+      {
+      signature: sig,
+      blockhash: latest.blockhash,
+     lastValidBlockHeight: latest.lastValidBlockHeight,
+     },
+      "confirmed"
       );
 
       setMsg("Payment sent. Verifying…");
