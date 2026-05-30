@@ -407,43 +407,66 @@ export default function Home() {
         preflightCommitment: "confirmed",
       });
 
-      const latest = await rpcConn.getLatestBlockhash("confirmed");
-
+      // Do not let a slow/expired client confirmation stop the protection flow.
+      // The backend commit route should verify the txSig on-chain.
       try {
-  await rpcConn.confirmTransaction(
-    { signature: sig, blockhash, lastValidBlockHeight },
-    "confirmed"
-  );
-} catch (confirmError) {
-  console.warn("confirmTransaction failed, checking signature status:", confirmError);
-
-  const status = await rpcConn.getSignatureStatus(sig, {
-    searchTransactionHistory: true,
-  });
-
-  const value = status.value;
-
-  if (!value || value.err) {
-    throw confirmError;
-  }
-}
+        await rpcConn.confirmTransaction(
+          { signature: sig, blockhash, lastValidBlockHeight },
+          "confirmed"
+        );
+      } catch (confirmError) {
+        console.warn(
+          "Client confirmation failed or expired. Continuing to backend verification:",
+          confirmError
+        );
+      }
 
       setMsg("Payment sent. Verifying…");
 
-      const commitRes = await fetch("/api/checkin/commit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          wallet: walletStr,
-          action: "rescue_paid",
-          rescueDays: quote!.missedDays,
-          txSig: sig,
-        }),
-        cache: "no-store",
-      });
+      const commitProtection = async () => {
+        const commitRes = await fetch("/api/checkin/commit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            wallet: walletStr,
+            action: "rescue_paid",
+            rescueDays: quote!.missedDays,
+            txSig: sig,
+          }),
+          cache: "no-store",
+        });
 
-      const commitJson = await commitRes.json().catch(() => ({}));
-      if (!commitRes.ok) throw new Error(commitJson?.error || "Commit failed");
+        const commitJson = await commitRes.json().catch(() => ({}));
+        return { commitRes, commitJson };
+      };
+
+      let commitRes: Response | null = null;
+      let commitJson: any = null;
+
+      // Give RPC/indexing a few seconds to see the transaction if it has just landed.
+      for (let attempt = 1; attempt <= 6; attempt++) {
+        const result = await commitProtection();
+        commitRes = result.commitRes;
+        commitJson = result.commitJson;
+
+        if (commitRes.ok) break;
+
+        const errorText = String(commitJson?.error || "").toLowerCase();
+        const shouldRetry =
+          errorText.includes("not found") ||
+          errorText.includes("not confirmed") ||
+          errorText.includes("pending") ||
+          errorText.includes("transaction");
+
+        if (!shouldRetry || attempt === 6) break;
+
+        setMsg(`Payment sent. Verifying… (${attempt}/6)`);
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+      }
+
+      if (!commitRes?.ok) {
+        throw new Error(commitJson?.error || "Commit failed");
+      }
 
       setMsg(
         `Protected ${commitJson.protectedDays ?? commitJson.rescuedDays} day(s) ✓`
