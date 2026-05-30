@@ -4,7 +4,7 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import { getAssociatedTokenAddress } from "@solana/spl-token";
 
 const MAX_RESCUE_DAYS = 4;
-const SKR_PER_DAY = 500;
+const SKR_PER_DAY = 100;
 
 const SKR_MINT = new PublicKey(
   process.env.SKR_MINT || "SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3"
