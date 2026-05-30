@@ -414,68 +414,72 @@ export default function LeaderboardPage() {
 
       <style>{`
         :root {
-          --cyan: #19e6ff;
-          --violet: #8a5cff;
-          --pink: #ff38d1;
+          --bg: #02030a;
+          --panel: rgba(8, 10, 24, 0.72);
+          --panel2: rgba(14, 18, 40, 0.54);
+          --line: rgba(255,255,255,0.12);
+          --line2: rgba(255,255,255,0.08);
+          --text: #f6f8ff;
+          --muted: rgba(246,248,255,0.64);
+          --soft: rgba(246,248,255,0.44);
+          --cyan: #22e7ff;
+          --blue: #3d7cff;
+          --violet: #8d5cff;
+          --magenta: #ff3fd7;
           --green: #00ffa3;
-          --text: #f4f7ff;
-          --muted: rgba(244,247,255,.68);
-          --line: rgba(255,255,255,.12);
-          --glass: rgba(7, 9, 22, .72);
-          --gold: #ffd76a;
-          --silver: #d9e7ff;
-          --bronze: #d99a5f;
+          --gold: #ffd76f;
+          --silver: #e6efff;
+          --bronze: #df9c64;
         }
 
         @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes glowPulse {
-          0%, 100% { box-shadow: 0 0 0 rgba(0,255,163,0); }
-          50% { box-shadow: 0 0 54px rgba(0,255,163,.20); }
+        @keyframes slowSpace {
+          0%, 100% { transform: scale(1.025) translate3d(0,0,0); }
+          50% { transform: scale(1.055) translate3d(-10px,-7px,0); }
         }
-        @keyframes bgShift {
-          0%, 100% { transform: scale(1.02) translate3d(0,0,0); }
-          50% { transform: scale(1.06) translate3d(-10px, -8px, 0); }
+        @keyframes shimmer {
+          0% { transform: translateX(-120%); opacity: 0; }
+          20% { opacity: .45; }
+          100% { transform: translateX(120%); opacity: 0; }
         }
-        @keyframes orbitSweep {
-          0% { transform: rotate(0deg) scale(1); opacity: .34; }
-          50% { opacity: .68; }
-          100% { transform: rotate(360deg) scale(1); opacity: .34; }
+        @keyframes pulseMe {
+          0%, 100% { box-shadow: 0 0 0 rgba(0,255,163,0), inset 0 0 0 1px rgba(0,255,163,.28); }
+          50% { box-shadow: 0 0 48px rgba(0,255,163,.16), inset 0 0 0 1px rgba(0,255,163,.48); }
         }
-        @keyframes starTwinkle {
-          0%, 100% { opacity: .20; transform: scale(1); }
-          50% { opacity: .55; transform: scale(1.05); }
+        @keyframes orbit {
+          to { transform: rotate(360deg); }
         }
 
         .lbShell {
-          min-height: 100vh;
           width: 100%;
-          color: var(--text);
-          padding: 28px 14px;
-          display: flex;
-          justify-content: center;
-          font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+          min-height: 100vh;
           position: relative;
           overflow: hidden;
-          background: #03040b;
+          display: flex;
+          justify-content: center;
+          padding: 28px 14px;
+          color: var(--text);
+          background: var(--bg);
+          font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
         }
 
         .lbShell::before {
           content: "";
           position: fixed;
-          inset: -28px;
+          inset: -34px;
           pointer-events: none;
           background-image:
-            linear-gradient(180deg, rgba(0,0,0,.30), rgba(0,0,0,.82)),
-            radial-gradient(850px 520px at 20% 18%, rgba(255,56,209,.20), transparent 68%),
-            radial-gradient(760px 520px at 82% 22%, rgba(25,230,255,.22), transparent 66%),
-            radial-gradient(720px 460px at 50% 80%, rgba(138,92,255,.18), transparent 68%),
+            linear-gradient(180deg, rgba(1,2,9,.24), rgba(1,2,9,.82)),
+            radial-gradient(900px 520px at 16% 14%, rgba(255,63,215,.20), transparent 62%),
+            radial-gradient(850px 520px at 84% 18%, rgba(34,231,255,.22), transparent 64%),
+            radial-gradient(720px 520px at 52% 86%, rgba(141,92,255,.18), transparent 68%),
             image-set(url("/leaderboard-cosmic.png") 1x, url("/leaderboard-cosmic@2x.png") 2x),
-            radial-gradient(rgba(255,255,255,.16) 1px, transparent 1px);
-          background-size: auto, auto, auto, auto, cover, 150px 150px;
+            radial-gradient(rgba(255,255,255,.18) 1px, transparent 1px);
+          background-size: auto, auto, auto, auto, cover, 180px 180px;
           background-position: center;
           background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat;
-          filter: saturate(1.12) contrast(1.06);
-          animation: bgShift 28s ease-in-out infinite;
+          filter: saturate(1.16) contrast(1.06);
+          animation: slowSpace 34s ease-in-out infinite;
           transform-origin: center;
         }
 
@@ -485,46 +489,44 @@ export default function LeaderboardPage() {
           inset: 0;
           pointer-events: none;
           background:
-            radial-gradient(circle at 18% 20%, rgba(255,255,255,.55) 0 1px, transparent 2px),
-            radial-gradient(circle at 76% 24%, rgba(255,255,255,.44) 0 1px, transparent 2px),
-            radial-gradient(circle at 42% 68%, rgba(25,230,255,.42) 0 1px, transparent 2px),
-            linear-gradient(90deg, transparent, rgba(255,255,255,.035), transparent),
-            radial-gradient(rgba(255,255,255,.055) 1px, transparent 1px);
-          background-size: 520px 520px, 680px 680px, 780px 780px, auto, 3px 3px;
-          opacity: .30;
+            radial-gradient(circle at 20% 18%, rgba(255,255,255,.62) 0 1px, transparent 2px),
+            radial-gradient(circle at 72% 22%, rgba(34,231,255,.48) 0 1px, transparent 2px),
+            radial-gradient(circle at 58% 68%, rgba(255,63,215,.42) 0 1px, transparent 2px),
+            radial-gradient(rgba(255,255,255,.05) 1px, transparent 1px);
+          background-size: 520px 520px, 640px 640px, 760px 760px, 4px 4px;
+          opacity: .28;
           mix-blend-mode: screen;
-          animation: starTwinkle 6s ease-in-out infinite;
         }
 
         .lbCard {
-          width: min(1060px, 100%);
+          width: min(1080px, 100%);
           position: relative;
           z-index: 1;
-          border: 1px solid rgba(255,255,255,.16);
-          border-radius: 30px;
-          background:
-            radial-gradient(1000px 360px at 50% -10%, rgba(25,230,255,.13), transparent 56%),
-            radial-gradient(880px 310px at 12% 0%, rgba(255,56,209,.15), transparent 60%),
-            radial-gradient(900px 320px at 92% 6%, rgba(138,92,255,.18), transparent 62%),
-            linear-gradient(180deg, rgba(8,10,26,.86), rgba(4,5,15,.80));
-          backdrop-filter: blur(20px) saturate(1.15);
-          -webkit-backdrop-filter: blur(20px) saturate(1.15);
-          box-shadow:
-            0 34px 130px rgba(0,0,0,.78),
-            inset 0 1px 0 rgba(255,255,255,.08),
-            inset 0 -1px 0 rgba(255,255,255,.04);
-          padding: 18px;
+          padding: 16px;
+          border-radius: 32px;
           overflow: hidden;
+          background:
+            linear-gradient(180deg, rgba(255,255,255,.075), rgba(255,255,255,.028)),
+            radial-gradient(900px 360px at 18% -12%, rgba(255,63,215,.12), transparent 58%),
+            radial-gradient(900px 360px at 86% -8%, rgba(34,231,255,.13), transparent 60%),
+            rgba(5, 7, 18, .72);
+          border: 1px solid rgba(255,255,255,.16);
+          backdrop-filter: blur(22px) saturate(1.2);
+          -webkit-backdrop-filter: blur(22px) saturate(1.2);
+          box-shadow:
+            0 34px 140px rgba(0,0,0,.78),
+            inset 0 1px 0 rgba(255,255,255,.12),
+            inset 0 -1px 0 rgba(255,255,255,.04);
         }
 
         .lbCard::before {
           content: "";
           position: absolute;
           inset: 0;
-          pointer-events: none;
-          border-radius: inherit;
           padding: 1px;
-          background: linear-gradient(135deg, rgba(255,56,209,.42), rgba(25,230,255,.38), rgba(0,255,163,.20), rgba(255,215,106,.16));
+          border-radius: inherit;
+          pointer-events: none;
+          background: linear-gradient(135deg, rgba(255,63,215,.52), rgba(34,231,255,.46), rgba(141,92,255,.26), rgba(255,215,111,.18));
           -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
           -webkit-mask-composite: xor;
           mask-composite: exclude;
@@ -533,90 +535,88 @@ export default function LeaderboardPage() {
         .lbCard::after {
           content: "";
           position: absolute;
-          width: 560px;
-          height: 560px;
-          right: -220px;
-          top: -270px;
-          border-radius: 50%;
-          border: 1px solid rgba(25,230,255,.18);
+          top: -190px;
+          right: -180px;
+          width: 430px;
+          height: 430px;
+          border-radius: 999px;
+          border: 1px solid rgba(34,231,255,.16);
           box-shadow:
-            inset 0 0 46px rgba(138,92,255,.10),
-            0 0 72px rgba(25,230,255,.10);
+            inset 0 0 52px rgba(141,92,255,.10),
+            0 0 80px rgba(34,231,255,.10);
           pointer-events: none;
-          animation: orbitSweep 34s linear infinite;
+          animation: orbit 42s linear infinite;
         }
 
         .lbHero {
           position: relative;
           display: flex;
-          align-items: flex-start;
           justify-content: space-between;
+          align-items: flex-start;
           gap: 18px;
           flex-wrap: wrap;
-          padding: 18px 18px 20px;
+          padding: 20px;
           margin-bottom: 14px;
-          border: 1px solid rgba(255,255,255,.10);
-          border-radius: 24px;
+          border-radius: 26px;
+          border: 1px solid rgba(255,255,255,.11);
           background:
-            radial-gradient(900px 220px at 22% 0%, rgba(255,56,209,.12), transparent 62%),
-            radial-gradient(900px 220px at 80% 0%, rgba(25,230,255,.12), transparent 62%),
-            rgba(255,255,255,.035);
-          box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+            radial-gradient(780px 220px at 18% 0%, rgba(255,63,215,.13), transparent 60%),
+            radial-gradient(820px 230px at 86% 10%, rgba(34,231,255,.13), transparent 62%),
+            linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.025));
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
           overflow: hidden;
         }
-        .lbHero::after {
+
+        .lbHero::before {
           content: "";
           position: absolute;
-          right: 26px;
-          bottom: -72px;
-          width: 240px;
-          height: 240px;
-          border-radius: 50%;
-          border: 1px solid rgba(255,255,255,.10);
-          box-shadow: inset 0 0 42px rgba(25,230,255,.08);
+          inset: 0;
+          background: linear-gradient(100deg, transparent 0%, rgba(255,255,255,.10) 48%, transparent 72%);
+          width: 50%;
+          animation: shimmer 7s ease-in-out infinite;
           pointer-events: none;
         }
 
         .lbEyebrow {
           display: inline-flex;
           align-items: center;
-          gap: 8px;
-          color: rgba(244,247,255,.78);
+          gap: 9px;
+          font-size: 11px;
+          font-weight: 1000;
+          letter-spacing: 2px;
           text-transform: uppercase;
-          letter-spacing: 1.8px;
-          font-size: 12px;
-          font-weight: 950;
+          color: rgba(246,248,255,.72);
         }
 
         .lbEyebrow::before {
           content: "";
-          width: 8px;
-          height: 8px;
+          width: 9px;
+          height: 9px;
           border-radius: 999px;
-          background: linear-gradient(135deg, var(--pink), var(--cyan));
-          box-shadow: 0 0 22px rgba(25,230,255,.72);
+          background: linear-gradient(135deg, var(--magenta), var(--cyan));
+          box-shadow: 0 0 24px rgba(34,231,255,.72);
         }
 
         .lbHero h1 {
-          margin: 8px 0 6px;
-          font-size: clamp(28px, 5vw, 54px);
-          line-height: .96;
-          letter-spacing: -.06em;
+          margin: 8px 0 7px;
+          font-size: clamp(30px, 5vw, 56px);
+          line-height: .94;
+          letter-spacing: -.065em;
           font-weight: 1000;
+          text-wrap: balance;
         }
 
         .lbHero p {
           margin: 0;
+          max-width: 640px;
           color: var(--muted);
-          max-width: 650px;
           font-size: 14px;
           line-height: 1.55;
         }
 
         .lbHero p span {
-          color: white;
-          font-weight: 950;
-          background: linear-gradient(90deg, var(--pink), var(--cyan));
+          font-weight: 1000;
+          background: linear-gradient(90deg, var(--magenta), var(--cyan));
           -webkit-background-clip: text;
           background-clip: text;
           color: transparent;
@@ -624,20 +624,22 @@ export default function LeaderboardPage() {
 
         .lbActions {
           display: flex;
-          gap: 10px;
           align-items: center;
+          gap: 10px;
         }
 
         .lbButton {
           height: 42px;
-          border-radius: 14px;
-          padding: 0 15px;
+          border-radius: 999px;
+          padding: 0 16px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
           text-decoration: none;
-          font-weight: 950;
+          border: 1px solid rgba(255,255,255,.15);
+          color: white;
           font-size: 13px;
+          font-weight: 1000;
           cursor: pointer;
           transition: transform .14s ease, border-color .14s ease, background .14s ease, box-shadow .14s ease;
         }
@@ -647,102 +649,145 @@ export default function LeaderboardPage() {
         .lbButton.small { height: 36px; margin-top: 10px; }
 
         .lbButtonGhost {
-          border: 1px solid rgba(255,255,255,.16);
           background: rgba(255,255,255,.055);
-          color: white;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
         }
 
         .lbButtonSolid {
-          border: 1px solid rgba(25,230,255,.40);
-          background: linear-gradient(135deg, rgba(138,92,255,.35), rgba(25,230,255,.22));
-          color: white;
-          box-shadow: 0 14px 34px rgba(0,0,0,.28), 0 0 28px rgba(25,230,255,.10);
+          border-color: rgba(34,231,255,.42);
+          background: linear-gradient(135deg, rgba(141,92,255,.42), rgba(34,231,255,.22));
+          box-shadow: 0 14px 38px rgba(0,0,0,.28), 0 0 32px rgba(34,231,255,.12);
         }
 
         .lbPodium {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
+          grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 12px;
-          margin: 0 0 14px;
+          margin-bottom: 14px;
         }
 
         .lbPodiumCard {
           position: relative;
-          border: 1px solid rgba(255,255,255,.13);
-          border-radius: 24px;
-          padding: 16px;
           min-width: 0;
+          padding: 16px;
+          border-radius: 26px;
           overflow: hidden;
+          border: 1px solid rgba(255,255,255,.13);
           background:
-            radial-gradient(420px 170px at 50% 0%, rgba(25,230,255,.13), transparent 62%),
-            linear-gradient(180deg, rgba(255,255,255,.060), rgba(255,255,255,.032));
+            linear-gradient(180deg, rgba(255,255,255,.068), rgba(255,255,255,.030)),
+            rgba(0,0,0,.18);
           box-shadow:
-            inset 0 1px 0 rgba(255,255,255,.10),
-            0 18px 52px rgba(0,0,0,.30);
+            0 20px 58px rgba(0,0,0,.30),
+            inset 0 1px 0 rgba(255,255,255,.10);
         }
+
         .lbPodiumCard::before {
           content: "";
           position: absolute;
-          inset: -1px;
+          inset: 0;
           pointer-events: none;
-          background: radial-gradient(280px 120px at 50% 0%, rgba(255,255,255,.16), transparent 64%);
-          opacity: .72;
+          background:
+            radial-gradient(340px 150px at 50% -20%, rgba(255,255,255,.18), transparent 62%),
+            radial-gradient(240px 120px at 102% -20%, rgba(34,231,255,.10), transparent 62%);
         }
+
         .lbPodiumCard::after {
           content: "";
           position: absolute;
-          right: -48px;
+          right: -54px;
           top: -72px;
-          width: 150px;
-          height: 150px;
-          border-radius: 50%;
-          border: 1px solid rgba(255,255,255,.08);
+          width: 160px;
+          height: 160px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,.09);
+          box-shadow: inset 0 0 34px rgba(255,255,255,.04);
           pointer-events: none;
         }
 
         .lbPodiumCard.p1 {
-          border-color: rgba(255,215,106,.54);
+          border-color: rgba(255,215,111,.58);
           background:
-            radial-gradient(420px 180px at 50% -8%, rgba(255,215,106,.34), transparent 64%),
-            radial-gradient(360px 160px at 18% 0%, rgba(255,56,209,.16), transparent 62%),
-            linear-gradient(180deg, rgba(255,215,106,.100), rgba(255,255,255,.035));
-          box-shadow: inset 0 1px 0 rgba(255,255,255,.15), 0 22px 70px rgba(255,184,61,.12), 0 18px 58px rgba(0,0,0,.34);
-        }
-        .lbPodiumCard.p2 {
-          border-color: rgba(217,231,255,.48);
-          background:
-            radial-gradient(420px 180px at 50% -8%, rgba(217,231,255,.25), transparent 64%),
-            radial-gradient(360px 160px at 80% 0%, rgba(25,230,255,.13), transparent 62%),
-            linear-gradient(180deg, rgba(217,231,255,.080), rgba(255,255,255,.032));
-          box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 22px 70px rgba(217,231,255,.09), 0 18px 58px rgba(0,0,0,.34);
-        }
-        .lbPodiumCard.p3 {
-          border-color: rgba(217,154,95,.50);
-          background:
-            radial-gradient(420px 180px at 50% -8%, rgba(217,154,95,.28), transparent 64%),
-            radial-gradient(360px 160px at 14% 0%, rgba(138,92,255,.13), transparent 62%),
-            linear-gradient(180deg, rgba(217,154,95,.090), rgba(255,255,255,.032));
-          box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 22px 70px rgba(217,154,95,.10), 0 18px 58px rgba(0,0,0,.34);
+            radial-gradient(420px 180px at 50% -12%, rgba(255,215,111,.34), transparent 64%),
+            radial-gradient(320px 160px at 0% 10%, rgba(255,63,215,.12), transparent 62%),
+            linear-gradient(180deg, rgba(255,215,111,.10), rgba(255,255,255,.03));
+          box-shadow: 0 22px 72px rgba(255,198,82,.12), 0 20px 58px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.16);
         }
 
-        .lbPodiumCard.mine { border-color: rgba(0,255,163,.55); box-shadow: 0 0 34px rgba(0,255,163,.13); }
-        .podiumRank { position: relative; color: var(--muted); font-size: 12px; font-weight: 950; letter-spacing: .8px; }
-        .p1 .podiumRank { color: var(--gold); text-shadow: 0 0 18px rgba(255,215,106,.35); }
-        .p2 .podiumRank { color: var(--silver); text-shadow: 0 0 18px rgba(217,231,255,.25); }
-        .p3 .podiumRank { color: var(--bronze); text-shadow: 0 0 18px rgba(217,154,95,.28); }
-        .podiumName { position: relative; margin-top: 8px; font-size: 18px; line-height: 1.1; font-weight: 1000; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .podiumStats { position: relative; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-        .podiumStats span { font-size: 12px; color: rgba(244,247,255,.78); border: 1px solid rgba(255,255,255,.12); border-radius: 999px; padding: 5px 8px; background: rgba(0,0,0,.18); }
+        .lbPodiumCard.p2 {
+          border-color: rgba(230,239,255,.48);
+          background:
+            radial-gradient(420px 180px at 50% -12%, rgba(230,239,255,.25), transparent 64%),
+            radial-gradient(320px 160px at 100% 10%, rgba(34,231,255,.12), transparent 62%),
+            linear-gradient(180deg, rgba(230,239,255,.08), rgba(255,255,255,.03));
+          box-shadow: 0 22px 72px rgba(230,239,255,.08), 0 20px 58px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.14);
+        }
+
+        .lbPodiumCard.p3 {
+          border-color: rgba(223,156,100,.52);
+          background:
+            radial-gradient(420px 180px at 50% -12%, rgba(223,156,100,.28), transparent 64%),
+            radial-gradient(320px 160px at 0% 10%, rgba(141,92,255,.12), transparent 62%),
+            linear-gradient(180deg, rgba(223,156,100,.09), rgba(255,255,255,.03));
+          box-shadow: 0 22px 72px rgba(223,156,100,.10), 0 20px 58px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.13);
+        }
+
+        .lbPodiumCard.mine {
+          border-color: rgba(0,255,163,.58);
+          box-shadow: 0 0 42px rgba(0,255,163,.13), 0 20px 58px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.12);
+        }
+
+        .podiumRank {
+          position: relative;
+          z-index: 1;
+          color: var(--muted);
+          font-size: 12px;
+          font-weight: 1000;
+          letter-spacing: .9px;
+        }
+        .p1 .podiumRank { color: var(--gold); text-shadow: 0 0 20px rgba(255,215,111,.34); }
+        .p2 .podiumRank { color: var(--silver); text-shadow: 0 0 20px rgba(230,239,255,.24); }
+        .p3 .podiumRank { color: var(--bronze); text-shadow: 0 0 20px rgba(223,156,100,.26); }
+
+        .podiumName {
+          position: relative;
+          z-index: 1;
+          margin-top: 8px;
+          font-size: 18px;
+          line-height: 1.1;
+          font-weight: 1000;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .podiumStats {
+          position: relative;
+          z-index: 1;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 13px;
+        }
+
+        .podiumStats span {
+          font-size: 12px;
+          font-weight: 850;
+          color: rgba(246,248,255,.76);
+          border: 1px solid rgba(255,255,255,.12);
+          border-radius: 999px;
+          padding: 5px 8px;
+          background: rgba(0,0,0,.22);
+        }
 
         .lbState {
-          border: 1px solid var(--line);
-          border-radius: 18px;
           min-height: 74px;
           display: flex;
           align-items: center;
           gap: 12px;
           padding: 14px;
-          color: rgba(244,247,255,.82);
+          border: 1px solid var(--line);
+          border-radius: 20px;
+          color: rgba(246,248,255,.82);
           background: rgba(255,255,255,.045);
         }
 
@@ -760,20 +805,20 @@ export default function LeaderboardPage() {
         }
 
         .lbBoard, .lbMyRank {
-          border: 1px solid rgba(255,255,255,.13);
-          border-radius: 24px;
+          border-radius: 26px;
           overflow: hidden;
+          border: 1px solid rgba(255,255,255,.13);
           background:
-            radial-gradient(900px 260px at 50% 0%, rgba(25,230,255,.055), transparent 70%),
-            rgba(0,0,0,.28);
+            radial-gradient(900px 260px at 50% 0%, rgba(34,231,255,.060), transparent 70%),
+            rgba(0,0,0,.30);
           box-shadow:
-            0 22px 70px rgba(0,0,0,.38),
-            inset 0 1px 0 rgba(255,255,255,.06);
+            0 24px 74px rgba(0,0,0,.40),
+            inset 0 1px 0 rgba(255,255,255,.07);
         }
 
         .lbHead, .lbRow {
           display: grid;
-          grid-template-columns: 72px 1fr 112px 112px;
+          grid-template-columns: 70px minmax(0, 1fr) 108px 108px;
           align-items: center;
           gap: 0;
         }
@@ -784,102 +829,128 @@ export default function LeaderboardPage() {
           letter-spacing: 1.1px;
           font-weight: 1000;
           text-transform: uppercase;
-          color: rgba(244,247,255,.64);
+          color: rgba(246,248,255,.62);
           background:
-            linear-gradient(90deg, rgba(255,56,209,.065), rgba(25,230,255,.065)),
-            rgba(255,255,255,.050);
+            linear-gradient(90deg, rgba(255,63,215,.06), rgba(34,231,255,.06)),
+            rgba(255,255,255,.045);
           border-bottom: 1px solid rgba(255,255,255,.09);
         }
 
-        .lbHead > div:nth-child(3), .lbHead > div:nth-child(4) { text-align: right; }
+        .lbHead > div:nth-child(3),
+        .lbHead > div:nth-child(4) {
+          text-align: right;
+        }
+
+        .lbRows {
+          display: flex;
+          flex-direction: column;
+        }
 
         .lbRow {
           position: relative;
-          padding: 12px 14px;
-          border-top: 1px solid rgba(255,255,255,.07);
-          background: linear-gradient(180deg, rgba(255,255,255,.030), rgba(255,255,255,.018));
+          padding: 11px 14px;
+          min-height: 66px;
+          border-top: 1px solid rgba(255,255,255,.065);
+          background: linear-gradient(180deg, rgba(255,255,255,.026), rgba(255,255,255,.014));
           transition: transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease;
         }
 
         .lbRow:first-child { border-top: 0; }
-        .lbRow:hover { transform: translateY(-1px); background: rgba(255,255,255,.055); box-shadow: 0 12px 30px rgba(0,0,0,.24); }
+
+        .lbRow:hover {
+          transform: translateY(-1px);
+          background: rgba(255,255,255,.052);
+          box-shadow: 0 14px 34px rgba(0,0,0,.26);
+        }
 
         .lbRowSkr {
           background:
-            radial-gradient(650px 90px at 10% 50%, rgba(0,255,163,.13), transparent 60%),
-            linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.018));
+            radial-gradient(620px 88px at 8% 50%, rgba(0,255,163,.11), transparent 60%),
+            linear-gradient(180deg, rgba(255,255,255,.030), rgba(255,255,255,.014));
         }
 
         .lbRow.rank1 {
-          border-color: rgba(255,215,106,.44);
+          border-color: rgba(255,215,111,.43);
           background:
-            radial-gradient(760px 140px at 5% 50%, rgba(255,215,106,.18), transparent 62%),
-            radial-gradient(760px 140px at 90% 50%, rgba(255,56,209,.08), transparent 62%),
-            linear-gradient(180deg, rgba(255,215,106,.055), rgba(255,255,255,.020));
+            radial-gradient(720px 132px at 0% 50%, rgba(255,215,111,.17), transparent 62%),
+            radial-gradient(680px 132px at 100% 50%, rgba(255,63,215,.07), transparent 62%),
+            linear-gradient(180deg, rgba(255,215,111,.050), rgba(255,255,255,.017));
         }
         .lbRow.rank2 {
-          border-color: rgba(217,231,255,.34);
+          border-color: rgba(230,239,255,.34);
           background:
-            radial-gradient(760px 140px at 5% 50%, rgba(217,231,255,.14), transparent 62%),
-            radial-gradient(760px 140px at 90% 50%, rgba(25,230,255,.08), transparent 62%),
-            linear-gradient(180deg, rgba(217,231,255,.045), rgba(255,255,255,.020));
+            radial-gradient(720px 132px at 0% 50%, rgba(230,239,255,.13), transparent 62%),
+            radial-gradient(680px 132px at 100% 50%, rgba(34,231,255,.07), transparent 62%),
+            linear-gradient(180deg, rgba(230,239,255,.040), rgba(255,255,255,.017));
         }
         .lbRow.rank3 {
-          border-color: rgba(217,154,95,.38);
+          border-color: rgba(223,156,100,.38);
           background:
-            radial-gradient(760px 140px at 5% 50%, rgba(217,154,95,.15), transparent 62%),
-            radial-gradient(760px 140px at 90% 50%, rgba(138,92,255,.08), transparent 62%),
-            linear-gradient(180deg, rgba(217,154,95,.048), rgba(255,255,255,.020));
+            radial-gradient(720px 132px at 0% 50%, rgba(223,156,100,.14), transparent 62%),
+            radial-gradient(680px 132px at 100% 50%, rgba(141,92,255,.07), transparent 62%),
+            linear-gradient(180deg, rgba(223,156,100,.043), rgba(255,255,255,.017));
         }
+
         .lbRow.rank1 .lbRank span {
-          color: #180f00;
-          border-color: rgba(255,215,106,.72);
-          background: linear-gradient(135deg, #fff1a8, #ffd76a 52%, #b8781d);
-          box-shadow: 0 0 28px rgba(255,215,106,.30);
+          color: #211300;
+          border-color: rgba(255,215,111,.72);
+          background: linear-gradient(135deg, #fff4b5, #ffd76f 52%, #a96b18);
+          box-shadow: 0 0 30px rgba(255,215,111,.28);
         }
         .lbRow.rank2 .lbRank span {
           color: #07111f;
-          border-color: rgba(217,231,255,.64);
-          background: linear-gradient(135deg, #ffffff, #d9e7ff 52%, #8d9bb3);
-          box-shadow: 0 0 24px rgba(217,231,255,.20);
+          border-color: rgba(230,239,255,.64);
+          background: linear-gradient(135deg, #ffffff, #e6efff 52%, #8b9ab5);
+          box-shadow: 0 0 24px rgba(230,239,255,.20);
         }
         .lbRow.rank3 .lbRank span {
-          color: #170904;
-          border-color: rgba(217,154,95,.66);
-          background: linear-gradient(135deg, #ffd0a4, #d99a5f 52%, #8b4a23);
-          box-shadow: 0 0 24px rgba(217,154,95,.22);
+          color: #180904;
+          border-color: rgba(223,156,100,.66);
+          background: linear-gradient(135deg, #ffd4aa, #df9c64 52%, #884720);
+          box-shadow: 0 0 24px rgba(223,156,100,.22);
         }
 
         .lbRowMe {
           z-index: 2;
           border-color: rgba(0,255,163,.50);
           background:
-            radial-gradient(760px 150px at 18% 50%, rgba(0,255,163,.20), transparent 60%),
-            radial-gradient(760px 150px at 88% 50%, rgba(138,92,255,.16), transparent 60%),
-            rgba(255,255,255,.045);
-          animation: glowPulse 2.4s ease-in-out infinite;
+            radial-gradient(720px 140px at 18% 50%, rgba(0,255,163,.18), transparent 60%),
+            radial-gradient(720px 140px at 88% 50%, rgba(141,92,255,.15), transparent 60%),
+            rgba(255,255,255,.042);
+          animation: pulseMe 2.4s ease-in-out infinite;
         }
 
-        .lbRowCompact { border-top: 0; }
+        .lbRowCompact {
+          border-top: 0;
+        }
 
         .lbRank span {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          min-width: 42px;
-          height: 34px;
+          min-width: 40px;
+          height: 32px;
           border-radius: 999px;
           font-weight: 1000;
-          border: 1px solid rgba(138,92,255,.34);
-          background: linear-gradient(180deg, rgba(138,92,255,.16), rgba(25,230,255,.06));
-          box-shadow: inset 0 1px 0 rgba(255,255,255,.09);
+          border: 1px solid rgba(141,92,255,.32);
+          background: linear-gradient(180deg, rgba(141,92,255,.15), rgba(34,231,255,.055));
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
         }
 
         .lbIdentity { min-width: 0; }
         .lbUserLine { display: flex; align-items: center; gap: 8px; min-width: 0; }
-        .lbUserName { display: block; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 1000; letter-spacing: -.01em; }
+        .lbUserName {
+          display: block;
+          min-width: 0;
+          max-width: 100%;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-weight: 1000;
+          letter-spacing: -.01em;
+        }
         .lbUserMe { color: white; }
-        .lbWalletLine { margin-top: 3px; font-size: 12px; color: rgba(244,247,255,.52); }
+        .lbWalletLine { margin-top: 3px; font-size: 12px; color: rgba(246,248,255,.50); }
 
         .lbYou {
           flex: 0 0 auto;
@@ -895,15 +966,15 @@ export default function LeaderboardPage() {
 
         .lbMetric { text-align: right; }
         .lbMetric strong { display: block; font-size: 17px; line-height: 1; font-weight: 1000; }
-        .lbMetric span { display: block; margin-top: 4px; font-size: 11px; color: rgba(244,247,255,.58); }
-        .streakMetric strong { color: white; text-shadow: 0 0 22px rgba(25,230,255,.18); }
+        .lbMetric span { display: block; margin-top: 4px; font-size: 11px; color: rgba(246,248,255,.56); }
+        .streakMetric strong { color: white; text-shadow: 0 0 22px rgba(34,231,255,.18); }
 
         .lbFooter {
           padding: 12px 14px;
-          color: rgba(244,247,255,.58);
+          color: rgba(246,248,255,.56);
           font-size: 12px;
           border-top: 1px solid rgba(255,255,255,.08);
-          background: rgba(255,255,255,.035);
+          background: rgba(255,255,255,.032);
         }
 
         .lbMyRank { margin-top: 14px; }
@@ -913,30 +984,37 @@ export default function LeaderboardPage() {
           letter-spacing: 1.1px;
           font-weight: 1000;
           text-transform: uppercase;
-          color: rgba(244,247,255,.68);
+          color: rgba(246,248,255,.66);
           border-bottom: 1px solid rgba(255,255,255,.08);
-          background: rgba(255,255,255,.045);
+          background: rgba(255,255,255,.042);
         }
 
         @media (max-width: 640px) {
           .lbShell { padding: 14px 10px; }
-          .lbCard { border-radius: 22px; padding: 12px; }
-          .lbHero { padding: 4px 2px 14px; }
+          .lbCard { border-radius: 24px; padding: 12px; }
+          .lbHero { padding: 16px; border-radius: 20px; }
           .lbActions { width: 100%; }
           .lbButton { flex: 1; }
           .lbPodium { grid-template-columns: 1fr; }
-          .lbHead, .lbRow { grid-template-columns: 58px 1fr 74px 74px; }
+          .lbHead, .lbRow { grid-template-columns: 54px minmax(0, 1fr) 72px 72px; }
           .lbHead { padding: 10px 10px; font-size: 10px; }
-          .lbRow { padding: 11px 10px; }
-          .lbRank span { min-width: 36px; height: 31px; font-size: 12px; }
+          .lbRow { padding: 10px; min-height: 62px; }
+          .lbRank span { min-width: 34px; height: 30px; font-size: 12px; }
           .lbUserName { font-size: 13px; }
           .lbWalletLine { font-size: 11px; }
           .lbMetric strong { font-size: 15px; }
           .lbMetric span { font-size: 10px; }
+          .podiumName { font-size: 16px; }
         }
 
         @media (prefers-reduced-motion: reduce) {
-          .lbShell::before, .lbRowMe, .lbSpinner { animation: none !important; }
+          .lbShell::before,
+          .lbCard::after,
+          .lbHero::before,
+          .lbRowMe,
+          .lbSpinner {
+            animation: none !important;
+          }
           .lbButton, .lbRow { transition: none !important; }
         }
       `}</style>
