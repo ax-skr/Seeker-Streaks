@@ -101,6 +101,7 @@ export default function Home() {
   const [verifying, setVerifying] = useState(false);
   const [status, setStatus] = useState<any>(null);
   const [msg, setMsg] = useState<string>("");
+  const [leaderboardPoints, setLeaderboardPoints] = useState<number | null>(null);
 
   const [skrName, setSkrName] = useState<string | null>(null);
   const lastResolvedWallet = useRef<string | null>(null);
@@ -123,6 +124,7 @@ export default function Home() {
   useEffect(() => {
     setSessionVerified(false);
     setStatus(null);
+    setLeaderboardPoints(null);
     setSkrName(null);
     setQuote(null);
     lastResolvedWallet.current = null;
@@ -191,10 +193,37 @@ export default function Home() {
     }
   }, [walletStr]);
 
+  // ---------- load points from the all-time leaderboard ----------
+  const loadLeaderboardPoints = useCallback(async () => {
+    if (!walletStr) return;
+
+    try {
+      const res = await fetch(
+        `/api/leaderboard?wallet=${encodeURIComponent(walletStr)}`,
+        {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        }
+      );
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) return;
+
+      const me = json?.me;
+      if (me && typeof me.points !== "undefined") {
+        setLeaderboardPoints(Number(me.points ?? 0));
+      }
+    } catch (e) {
+      console.warn("Failed to load points from leaderboard:", e);
+    }
+  }, [walletStr]);
+
   useEffect(() => {
     if (!connected || !walletStr) return;
     resolveSkr();
-  }, [connected, walletStr, resolveSkr]);
+    loadLeaderboardPoints();
+  }, [connected, walletStr, resolveSkr, loadLeaderboardPoints]);
 
   // ---------- load status ----------
   const loadStatus = useCallback(async () => {
@@ -209,13 +238,14 @@ export default function Home() {
 
     const json = await res.json().catch(() => ({}));
     setStatus(json);
+    await loadLeaderboardPoints();
 
     if (json?.missedDays > 0) {
       await loadQuote();
     } else {
       setQuote(null);
     }
-  }, [walletStr, loadQuote]);
+  }, [walletStr, loadQuote, loadLeaderboardPoints]);
 
   // ---------- verify ----------
   const verifyWallet = useCallback(async () => {
@@ -557,17 +587,14 @@ export default function Home() {
               <span>Streak</span>
               <strong>{status.streak}</strong>
             </div>
-
             <div className="ssStat">
               <span>Points</span>
-              <strong>{status.points ?? 0}</strong>
+              <strong>{leaderboardPoints ?? status.points ?? 0}</strong>
             </div>
-
             <div className="ssStat">
               <span>Missed days</span>
               <strong>{status.missedDays}</strong>
             </div>
-
             <div className="ssStat">
               <span>Protections left</span>
               <strong>{protectionsLeft}</strong>
@@ -641,10 +668,7 @@ export default function Home() {
         </div>
 
         <footer className="ssFooter">
-          <div className="ssFounderNote">
-            Founder Era • 104 days preserved
-          </div>
-
+          <div className="ssFounderNote">Founder Era • 104 days preserved</div>
           <div className="ssFooterLinks">
             <Link href="/terms">Terms</Link>
             <span>•</span>
@@ -1045,14 +1069,13 @@ export default function Home() {
         .ssNavFounder b { color: var(--ss-gold); }
 
 
-
         .ssFooter {
           margin-top: 18px;
           text-align: center;
         }
 
         .ssFounderNote {
-          color: rgba(243,247,255,.55);
+          color: rgba(243,247,255,.54);
           font-size: 11px;
           letter-spacing: .5px;
           margin-bottom: 8px;
@@ -1060,24 +1083,23 @@ export default function Home() {
 
         .ssFooterLinks {
           display: flex;
-          align-items: center;
           justify-content: center;
+          align-items: center;
           gap: 10px;
           font-size: 12px;
         }
 
         .ssFooterLinks a {
-          color: rgba(243,247,255,.75);
+          color: rgba(243,247,255,.74);
           text-decoration: none;
-          transition: color .14s ease;
         }
 
         .ssFooterLinks a:hover {
-          color: white;
+          color: #ffffff;
         }
 
         .ssFooterLinks span {
-          color: rgba(243,247,255,.35);
+          color: rgba(243,247,255,.34);
         }
 
         @media (max-width: 430px) {
