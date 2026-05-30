@@ -557,10 +557,17 @@ export default function Home() {
               <span>Streak</span>
               <strong>{status.streak}</strong>
             </div>
+
+            <div className="ssStat">
+              <span>Points</span>
+              <strong>{status.points ?? 0}</strong>
+            </div>
+
             <div className="ssStat">
               <span>Missed days</span>
               <strong>{status.missedDays}</strong>
             </div>
+
             <div className="ssStat">
               <span>Protections left</span>
               <strong>{protectionsLeft}</strong>
@@ -627,11 +634,23 @@ export default function Home() {
           <Link href="/founder-era" className="ssNavButton ssNavFounder">
             <span>
               <strong>Founder Era Snapshot</strong>
-              <small>104 days preserved</small>
+              <small>16 Feb 2026 — 30 May 2026</small>
             </span>
             <b>→</b>
           </Link>
         </div>
+
+        <footer className="ssFooter">
+          <div className="ssFounderNote">
+            Founder Era • 104 days preserved
+          </div>
+
+          <div className="ssFooterLinks">
+            <Link href="/terms">Terms</Link>
+            <span>•</span>
+            <Link href="/privacy">Privacy</Link>
+          </div>
+        </footer>
       </section>
 
       <style>{`
@@ -865,7 +884,7 @@ export default function Home() {
 
         .ssStats {
           display: grid;
-          grid-template-columns: repeat(3, 1fr);
+          grid-template-columns: repeat(4, 1fr);
           gap: 8px;
           border-radius: 20px;
           padding: 10px;
@@ -1025,10 +1044,46 @@ export default function Home() {
 
         .ssNavFounder b { color: var(--ss-gold); }
 
+
+
+        .ssFooter {
+          margin-top: 18px;
+          text-align: center;
+        }
+
+        .ssFounderNote {
+          color: rgba(243,247,255,.55);
+          font-size: 11px;
+          letter-spacing: .5px;
+          margin-bottom: 8px;
+        }
+
+        .ssFooterLinks {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          font-size: 12px;
+        }
+
+        .ssFooterLinks a {
+          color: rgba(243,247,255,.75);
+          text-decoration: none;
+          transition: color .14s ease;
+        }
+
+        .ssFooterLinks a:hover {
+          color: white;
+        }
+
+        .ssFooterLinks span {
+          color: rgba(243,247,255,.35);
+        }
+
         @media (max-width: 430px) {
           .ssShell { padding: 14px; }
           .ssCard { border-radius: 24px; padding: 15px; }
-          .ssStats { grid-template-columns: 1fr; }
+          .ssStats { grid-template-columns: repeat(2, 1fr); }
           .ssHero h1 { font-size: 38px; }
         }
 
