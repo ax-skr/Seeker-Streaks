@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { PublicKey } from "@solana/web3.js";
 
 const MAX_RESCUE_DAYS = 4;
-const SKR_PER_DAY = 500;
+const SKR_PER_DAY = 100;
 const SKR_DECIMALS = 6;
 
 const SKR_MINT = new PublicKey(
