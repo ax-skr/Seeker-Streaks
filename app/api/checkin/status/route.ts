@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 const MAX_RESCUE_DAYS = 4;
-const SKR_PER_DAY = 500;
+const SKR_PER_DAY = 100;
 
 // Optional debug endpoint (safe to keep)
 export async function GET() {
