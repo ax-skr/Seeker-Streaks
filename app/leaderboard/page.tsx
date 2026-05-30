@@ -8,9 +8,11 @@ type Row = {
   wallet: string;
   points?: number;
   streak?: number;
-  name?: string | null; // main domain (any TLD)
+  name?: string | null;
   rank?: number;
 };
+
+type CacheEntry = { value: string | null; expiresAt: number };
 
 function shortWallet(w: string) {
   if (!w) return "";
@@ -29,15 +31,12 @@ async function safeJson(res: Response) {
   return res.json();
 }
 
-type CacheEntry = { value: string | null; expiresAt: number };
-
 export default function LeaderboardPage() {
   const { publicKey, connected } = useWallet();
 
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-
   const [myRow, setMyRow] = useState<Row | null>(null);
   const [myLoading, setMyLoading] = useState(false);
 
@@ -48,10 +47,7 @@ export default function LeaderboardPage() {
 
   const myWallet = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
 
-  // Local in-memory cache to avoid re-resolving during same page session
   const nameCache = useRef<Map<string, CacheEntry>>(new Map());
-
-  // Prevent duplicate in-flight batch resolves + cancel stale background tasks
   const loadSeq = useRef(0);
   const inflightWallets = useRef<Set<string>>(new Set());
 
@@ -66,16 +62,17 @@ export default function LeaderboardPage() {
   }
 
   function setCachedName(wallet: string, value: string | null) {
-    const ttlMs = 24 * 60 * 60 * 1000;
-    nameCache.current.set(wallet, { value, expiresAt: Date.now() + ttlMs });
+    nameCache.current.set(wallet, {
+      value,
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+    });
   }
 
-  // MAIN DOMAIN NORMALIZATION (Option B)
   function normalizeName(v: unknown): string | null {
     const s = typeof v === "string" ? v.trim() : "";
     if (!s) return null;
-    if (!s.includes(".")) return null; // accept any "name.tld"
-    if (s.length > 80) return null; // prevent layout abuse
+    if (!s.includes(".")) return null;
+    if (s.length > 80) return null;
     return s;
   }
 
@@ -83,10 +80,17 @@ export default function LeaderboardPage() {
     return display.toLowerCase().endsWith(".skr");
   }
 
+  function displayName(row: Row) {
+    return (
+      (normalizeName(row.name) || getCachedName(row.wallet) || "").trim() ||
+      shortWallet(row.wallet)
+    );
+  }
+
   async function resolveNamesBatch(wallets: string[], seq: number) {
     const unique = Array.from(new Set(wallets)).filter(Boolean);
-
     const toFetch: string[] = [];
+
     for (const w of unique) {
       if (getCachedName(w) !== undefined) continue;
       if (inflightWallets.current.has(w)) continue;
@@ -111,20 +115,17 @@ export default function LeaderboardPage() {
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
 
       const names: Record<string, string | null> =
-        (data?.names && typeof data.names === "object" ? data.names : {}) as any;
+        data?.names && typeof data.names === "object" ? data.names : {};
 
       for (const w of toFetch) {
-        const n = normalizeName(names?.[w]);
-        setCachedName(w, n);
+        setCachedName(w, normalizeName(names?.[w]));
       }
 
       if (loadSeq.current !== seq) return;
 
       setRows((prev) =>
         prev.map((r) => {
-          const existing = normalizeName(r.name);
-          if (existing) return r;
-
+          if (normalizeName(r.name)) return r;
           const cached = getCachedName(r.wallet);
           if (cached === undefined) return r;
           return { ...r, name: cached };
@@ -133,9 +134,7 @@ export default function LeaderboardPage() {
 
       setMyRow((prev) => {
         if (!prev) return prev;
-        const existing = normalizeName(prev.name);
-        if (existing) return prev;
-
+        if (normalizeName(prev.name)) return prev;
         const cached = getCachedName(prev.wallet);
         if (cached === undefined) return prev;
         return { ...prev, name: cached };
@@ -172,7 +171,6 @@ export default function LeaderboardPage() {
       const normalized: Row[] = raw.map((r: any, i: number) => {
         const wallet = String(r.wallet ?? "");
         const dbName = normalizeName(r.name);
-
         if (wallet && dbName) setCachedName(wallet, dbName);
 
         return {
@@ -185,7 +183,6 @@ export default function LeaderboardPage() {
       });
 
       const top100 = normalized.slice(0, 100);
-
       setRows(top100);
       setLoading(false);
 
@@ -234,7 +231,6 @@ export default function LeaderboardPage() {
 
       const wallet = String(me.wallet);
       const dbName = normalizeName(me?.name);
-
       if (wallet && dbName) setCachedName(wallet, dbName);
 
       setMyRow({
@@ -272,700 +268,530 @@ export default function LeaderboardPage() {
     return rows.some((r) => r.wallet === myWallet);
   }, [rows, myWallet]);
 
+  const topThree = rows.slice(0, 3);
+
+  function RowItem({ row, idx, compact = false }: { row: Row; idx: number; compact?: boolean }) {
+    const display = displayName(row);
+    const showSkr = isSkrDisplay(display);
+    const isMe = !!myWallet && row.wallet === myWallet && connected;
+
+    return (
+      <div
+        className={`lbRow ${showSkr ? "lbRowSkr" : ""} ${isMe ? "lbRowMe" : ""} ${
+          compact ? "lbRowCompact" : ""
+        }`}
+      >
+        <div className="lbRank">
+          <span>{row.rank ?? idx + 1}</span>
+        </div>
+
+        <div className="lbIdentity">
+          <div className="lbUserLine">
+            <span className={`lbUserName ${isMe ? "lbUserMe" : ""}`} title={display}>
+              {display}
+            </span>
+            {isMe && <span className="lbYou">YOU</span>}
+          </div>
+          <div className="lbWalletLine">{shortWallet(row.wallet)}</div>
+        </div>
+
+        <div className="lbMetric">
+          <strong>{Number(row.points ?? 0)}</strong>
+          <span>Points</span>
+        </div>
+
+        <div className="lbMetric streakMetric">
+          <strong>{Number(row.streak ?? 0)}</strong>
+          <span>Streak</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="lbShell" style={styles.shell}>
-      <div style={styles.card} className="lbCard">
-        <div style={styles.headerRow}>
+    <main className="lbShell">
+      <section className="lbCard">
+        <header className="lbHero">
           <div>
-            <div style={styles.title}>Leaderboard</div>
-
-            <div
-              style={{
-                marginTop: 6,
-                fontSize: 12,
-                fontWeight: 900,
-                letterSpacing: 0.9,
-                opacity: 0.92,
-                textTransform: "uppercase",
-              }}
-            >
-              Phase 1 — Founders Era
-            </div>
-
-            <div style={styles.sub}>
-              Ranked by <span style={styles.badge}>longest streak</span>, then total points
-            </div>
+            <div className="lbEyebrow">Seeker Streaks</div>
+            <h1>All-Time Leaderboard</h1>
+            <p>
+              Ranked by <span>longest streak</span>, then total points. The current line keeps moving.
+            </p>
           </div>
 
-          <div style={styles.actions}>
+          <div className="lbActions">
             <button
               onClick={() => {
                 load();
                 loadMyRank();
               }}
-              style={styles.btnSecondary}
-              className="lbBtn lbBtnSecondary"
+              className="lbButton lbButtonGhost"
             >
               Refresh
             </button>
-            <Link href="/" style={styles.btnPrimary as any} className="lbBtn lbBtnPrimary">
+            <Link href="/" className="lbButton lbButtonSolid">
               Back
             </Link>
           </div>
-        </div>
+        </header>
+
+        {!loading && !err && rows.length > 0 && (
+          <div className="lbPodium" aria-label="Top 3 leaderboard positions">
+            {topThree.map((r, i) => {
+              const display = displayName(r);
+              const isMe = !!myWallet && r.wallet === myWallet && connected;
+              return (
+                <div key={`podium-${r.wallet}-${i}`} className={`lbPodiumCard p${i + 1} ${isMe ? "mine" : ""}`}>
+                  <div className="podiumRank">#{r.rank ?? i + 1}</div>
+                  <div className="podiumName" title={display}>{display}</div>
+                  <div className="podiumStats">
+                    <span>{Number(r.streak ?? 0)} streak</span>
+                    <span>{Number(r.points ?? 0)} points</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {loading && (
-          <div style={styles.loadingBox} className="lbGlass">
-            <div style={styles.spinner} />
-            <div>Loading leaderboard…</div>
+          <div className="lbState">
+            <div className="lbSpinner" />
+            <span>Loading leaderboard…</span>
           </div>
         )}
 
         {!loading && err && (
-          <div style={styles.errorBox} className="lbGlassDanger">
-            <div style={styles.errorTitle}>Couldn’t load leaderboard</div>
-            <div style={styles.errorText}>{err}</div>
-            <div style={{ marginTop: 12 }}>
-              <button onClick={load} style={styles.btnSecondary} className="lbBtn lbBtnSecondary">
-                Try again
-              </button>
-            </div>
+          <div className="lbState lbError">
+            <strong>Couldn’t load leaderboard</strong>
+            <span>{err}</span>
+            <button onClick={load} className="lbButton lbButtonGhost small">
+              Try again
+            </button>
           </div>
         )}
 
         {!loading && !err && rows.length === 0 && (
-          <div style={styles.emptyBox} className="lbGlass">
-            No entries yet. Verify + check in, then refresh.
-          </div>
+          <div className="lbState">No entries yet. Verify + check in, then refresh.</div>
         )}
 
         {!loading && !err && rows.length > 0 && (
-          <div style={styles.tableWrap} className="lbWrap">
-            <div style={styles.tableHead} className="lbHead">
-              <div style={styles.colRank}>#</div>
-              <div style={styles.colName}>User</div>
-              <div style={styles.colPoints}>Points</div>
-              <div style={styles.colStreak}>Streak</div>
+          <div className="lbBoard">
+            <div className="lbHead">
+              <div>#</div>
+              <div>User</div>
+              <div>Points</div>
+              <div>Streak</div>
             </div>
 
-            <div style={styles.tableBody}>
-              {rows.map((r, idx) => {
-                const display =
-                  (normalizeName(r.name) || getCachedName(r.wallet) || "").trim() ||
-                  shortWallet(r.wallet);
-
-                const showSkr = isSkrDisplay(display);
-                const isMe = !!myWallet && r.wallet === myWallet && connected;
-
-                return (
-                  <div
-                    key={`${r.wallet}-${idx}`}
-                    style={{
-                      ...styles.row,
-                      ...(showSkr ? styles.rowSkrGlow : null),
-                      ...(isMe ? styles.rowMePop : null),
-                    }}
-                    className={`lbRow ${showSkr ? "lbRowSkr" : ""} ${isMe ? "lbRowMe" : ""}`}
-                  >
-                    <div style={styles.colRank}>
-                      <span style={{ ...styles.rankPill, ...(isMe ? styles.rankPillMe : null) }}>
-                        {r.rank ?? idx + 1}
-                      </span>
-                    </div>
-
-                    <div style={styles.colName}>
-                      <div style={styles.userLine}>
-                        <span
-                          className="lbUserName"
-                          style={
-                            isMe ? styles.userNameMe : showSkr ? styles.userName : styles.userNameSingle
-                          }
-                          title={display}
-                        >
-                          {display}
-                        </span>
-
-                        {isMe && (
-                          <span style={styles.mePill} className="lbMePill">
-                            YOU
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="lbWalletLine" style={isMe ? styles.walletLineMe : styles.walletLine}>
-                        {shortWallet(r.wallet)}
-                      </div>
-                    </div>
-
-                    <div style={styles.colPoints}>
-                      <div style={isMe ? styles.statNumMe : styles.statNum}>{Number(r.points ?? 0)}</div>
-                      <div style={styles.statLabel}>Points</div>
-                    </div>
-
-                    <div style={styles.colStreak}>
-                      <div style={isMe ? styles.statNumMe : styles.statNum}>{Number(r.streak ?? 0)}</div>
-                      <div style={styles.statLabel}>Streak</div>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="lbRows">
+              {rows.map((r, idx) => (
+                <RowItem key={`${r.wallet}-${idx}`} row={r} idx={idx} />
+              ))}
             </div>
 
-            <div style={styles.footerNote} className="lbFooterNote">
-              Only verified and locked in 👀 users show here.
-            </div>
+            <div className="lbFooter">Top 100 verified users. Streaks continue daily at 00:00 UTC.</div>
           </div>
         )}
 
         {!loading && !err && connected && myWallet && !myInTop100 && (
-          <div
-            style={{
-              marginTop: 14,
-              borderRadius: 16,
-              border: "1px solid rgba(255,255,255,0.10)",
-              background: "rgba(255,255,255,0.04)",
-              overflow: "hidden",
-            }}
-            className="lbGlass"
-          >
-            <div
-              style={{
-                padding: "12px 12px",
-                borderBottom: "1px solid rgba(255,255,255,0.06)",
-                fontWeight: 900,
-                fontSize: 12,
-                textTransform: "uppercase",
-                letterSpacing: 0.8,
-                opacity: 0.9,
-              }}
-            >
-              Your position
-            </div>
-
+          <div className="lbMyRank">
+            <div className="lbMyRankTitle">Your position</div>
             {myLoading ? (
-              <div style={{ padding: 14, display: "flex", gap: 12, alignItems: "center" }}>
-                <div style={styles.spinner} />
-                <div>Loading your rank…</div>
+              <div className="lbState compactState">
+                <div className="lbSpinner" />
+                <span>Loading your rank…</span>
               </div>
             ) : myRow ? (
-              (() => {
-                const display =
-                  (normalizeName(myRow.name) || getCachedName(myRow.wallet) || "").trim() ||
-                  shortWallet(myRow.wallet);
-
-                const showSkr = isSkrDisplay(display);
-
-                return (
-                  <div
-                    style={{
-                      ...styles.row,
-                      gridTemplateColumns: "70px 1fr 110px 110px",
-                      borderTop: "none",
-                      background: "rgba(0,0,0,0.18)",
-                      ...(showSkr ? styles.rowSkrGlow : null),
-                    }}
-                    className={`lbRow ${showSkr ? "lbRowSkr" : ""}`}
-                  >
-                    <div style={styles.colRank}>
-                      <span style={styles.rankPill}>{typeof myRow.rank === "number" ? myRow.rank : "—"}</span>
-                    </div>
-
-                    <div style={styles.colName}>
-                      <div style={styles.userLine}>
-                        <span
-                          className="lbUserName"
-                          style={showSkr ? styles.userName : styles.userNameSingle}
-                          title={display}
-                        >
-                          {display}
-                        </span>
-                      </div>
-                      <div className="lbWalletLine" style={styles.walletLine}>
-                        {shortWallet(myRow.wallet)}
-                      </div>
-                    </div>
-
-                    <div style={styles.colPoints}>
-                      <div style={styles.statNum}>{Number(myRow.points ?? 0)}</div>
-                      <div style={styles.statLabel}>Points</div>
-                    </div>
-
-                    <div style={styles.colStreak}>
-                      <div style={styles.statNum}>{Number(myRow.streak ?? 0)}</div>
-                      <div style={styles.statLabel}>Streak</div>
-                    </div>
-                  </div>
-                );
-              })()
+              <RowItem row={myRow} idx={0} compact />
             ) : (
-              <div style={{ padding: 14, opacity: 0.85, fontSize: 13 }}>Couldn’t load your rank right now.</div>
+              <div className="lbState compactState">Couldn’t load your rank right now.</div>
             )}
           </div>
         )}
-      </div>
+      </section>
 
       <style>{`
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-
-        /* Lightweight pulse */
-        @keyframes mePulse {
-          0%   { box-shadow: 0 0 0 rgba(0,255,163,0.0); }
-          50%  { box-shadow: 0 0 52px rgba(0,255,163,0.22); }
-          100% { box-shadow: 0 0 0 rgba(0,255,163,0.0); }
+        :root {
+          --cyan: #19e6ff;
+          --violet: #8a5cff;
+          --pink: #ff38d1;
+          --green: #00ffa3;
+          --text: #f4f7ff;
+          --muted: rgba(244,247,255,.68);
+          --line: rgba(255,255,255,.12);
+          --glass: rgba(7, 9, 22, .72);
         }
 
-        /* Drift the layered background positions (cheap) */
-        @keyframes cosmicDrift {
-          0%   { background-position:
-            0 0,
-            0 0,
-            0 0,
-            center,
-            0 0,
-            40px 60px,
-            0 0;
-          }
-          50%  { background-position:
-            22px -14px,
-            -18px 10px,
-            14px 18px,
-            calc(50% + 10px) calc(50% - 6px),
-            18px 10px,
-            60px 82px,
-            0 0;
-          }
-          100% { background-position:
-            0 0,
-            0 0,
-            0 0,
-            center,
-            0 0,
-            40px 60px,
-            0 0;
-          }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes glowPulse {
+          0%, 100% { box-shadow: 0 0 0 rgba(0,255,163,0); }
+          50% { box-shadow: 0 0 54px rgba(0,255,163,.20); }
+        }
+        @keyframes bgShift {
+          0%, 100% { transform: scale(1.02) translate3d(0,0,0); }
+          50% { transform: scale(1.06) translate3d(-10px, -8px, 0); }
         }
 
-        /* IMPORTANT: let the background be a FIXED layer so it covers the whole page/scroll */
-        .lbShell { position: relative; width: 100%; min-height: 100vh; overflow: hidden; }
-        .lbShell::before, .lbShell::after { z-index: 0; }
-        .lbCard { position: relative; z-index: 1; }
+        .lbShell {
+          min-height: 100vh;
+          width: 100%;
+          color: var(--text);
+          padding: 28px 14px;
+          display: flex;
+          justify-content: center;
+          font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+          position: relative;
+          overflow: hidden;
+          background: #03040b;
+        }
 
         .lbShell::before {
           content: "";
           position: fixed;
-          inset: 0;
+          inset: -28px;
           pointer-events: none;
-
           background-image:
-            radial-gradient(1100px 700px at 18% 22%, rgba(0,255,163,0.16), transparent 62%),
-            radial-gradient(1050px 680px at 82% 18%, rgba(120,120,255,0.18), transparent 62%),
-            radial-gradient(1000px 650px at 68% 80%, rgba(170, 80, 255, 0.14), transparent 60%),
-
-            /* HD cosmic image (auto-picks @2x on supported devices) */
-            image-set(
-              url("/leaderboard-cosmic.png") 1x,
-              url("/leaderboard-cosmic@2x.png") 2x
-            ),
-
-            radial-gradient(rgba(255,255,255,0.20) 1px, transparent 1px),
-            radial-gradient(rgba(255,255,255,0.12) 1px, transparent 1px),
-            linear-gradient(180deg, #04050a 0%, #070816 45%, #04050a 100%);
-
-          /* Keep the nebula crisp: do NOT upscale beyond cover; no weird center-only placement */
-          background-size:
-            auto,
-            auto,
-            auto,
-            cover,
-            120px 120px,
-            220px 220px,
-            auto;
-
-          background-position:
-            0 0,
-            0 0,
-            0 0,
-            center,
-            0 0,
-            40px 60px,
-            0 0;
-
-          background-repeat:
-            no-repeat,
-            no-repeat,
-            no-repeat,
-            no-repeat,
-            repeat,
-            repeat,
-            no-repeat;
-
-          /* Avoid "blurry/enlarged" look: remove aggressive filters */
-          filter: contrast(1.06) saturate(1.02);
-          opacity: 1;
-
-          animation: cosmicDrift 34s ease-in-out infinite;
-          will-change: background-position;
-          transform: translateZ(0);
+            linear-gradient(180deg, rgba(0,0,0,.30), rgba(0,0,0,.82)),
+            radial-gradient(850px 520px at 20% 18%, rgba(255,56,209,.20), transparent 68%),
+            radial-gradient(760px 520px at 82% 22%, rgba(25,230,255,.22), transparent 66%),
+            radial-gradient(720px 460px at 50% 80%, rgba(138,92,255,.18), transparent 68%),
+            image-set(url("/leaderboard-cosmic.png") 1x, url("/leaderboard-cosmic@2x.png") 2x),
+            radial-gradient(rgba(255,255,255,.16) 1px, transparent 1px);
+          background-size: auto, auto, auto, auto, cover, 150px 150px;
+          background-position: center;
+          background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat;
+          filter: saturate(1.12) contrast(1.06);
+          animation: bgShift 28s ease-in-out infinite;
+          transform-origin: center;
         }
 
-        /* subtle grain */
         .lbShell::after {
           content: "";
           position: fixed;
           inset: 0;
           pointer-events: none;
-          background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);
-          background-size: 3px 3px;
-          opacity: 0.10;
+          background:
+            linear-gradient(90deg, transparent, rgba(255,255,255,.035), transparent),
+            radial-gradient(rgba(255,255,255,.06) 1px, transparent 1px);
+          background-size: auto, 3px 3px;
+          opacity: .28;
           mix-blend-mode: overlay;
         }
 
-        .lbCard { box-shadow: 0 22px 80px rgba(0,0,0,0.68); }
-
-        .lbGlass, .lbGlassDanger {
-          backdrop-filter: blur(10px);
-          -webkit-backdrop-filter: blur(10px);
-        }
-
-        .lbBtn {
-          transition: transform 120ms ease, box-shadow 160ms ease, border-color 160ms ease, background 160ms ease;
-          will-change: transform;
-        }
-        .lbBtn:hover { transform: translateY(-1px); }
-        .lbBtn:active { transform: translateY(0px) scale(0.99); }
-
-        .lbRow {
-          transition: transform 160ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease;
+        .lbCard {
+          width: min(1040px, 100%);
           position: relative;
-        }
-        .lbRow:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 12px 30px rgba(0,0,0,0.28);
+          z-index: 1;
+          border: 1px solid rgba(255,255,255,.14);
+          border-radius: 28px;
+          background:
+            linear-gradient(180deg, rgba(10,12,28,.82), rgba(5,6,16,.76)),
+            radial-gradient(900px 240px at 18% 0%, rgba(255,56,209,.12), transparent 60%),
+            radial-gradient(900px 240px at 88% 0%, rgba(25,230,255,.12), transparent 60%);
+          backdrop-filter: blur(18px);
+          -webkit-backdrop-filter: blur(18px);
+          box-shadow: 0 26px 110px rgba(0,0,0,.72);
+          padding: 18px;
+          overflow: hidden;
         }
 
-        /* CLEAN "pop": no scale, no random bar. Just a premium frame + aura */
-        .lbRowMe {
-          transform: translateY(-3px);
-          z-index: 2;
-          animation: mePulse 2.2s ease-in-out infinite;
-        }
-        .lbRowMe:hover { transform: translateY(-4px); }
-
-        .lbRowMe::before {
+        .lbCard::before {
           content: "";
           position: absolute;
-          inset: 6px;                 /* stays inside the row so nothing sticks out left */
-          border-radius: 14px;
+          inset: 0;
           pointer-events: none;
-          box-shadow:
-            inset 0 0 0 2px rgba(0,255,163,0.36),
-            0 14px 34px rgba(0,0,0,0.44),
-            0 0 36px rgba(0,255,163,0.20);
+          border-radius: inherit;
+          padding: 1px;
+          background: linear-gradient(135deg, rgba(255,56,209,.36), rgba(25,230,255,.34), rgba(0,255,163,.18));
+          -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          -webkit-mask-composite: xor;
+          mask-composite: exclude;
         }
 
-        /* Keep columns from overflowing */
-        .lbRow > div:nth-child(2),
-        .lbHead > div:nth-child(2) { min-width: 0; }
+        .lbHero {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 18px;
+          flex-wrap: wrap;
+          padding: 6px 4px 18px;
+        }
 
-        @media (max-width: 520px) {
-          .lbHead, .lbRow { grid-template-columns: 58px 1fr 74px 74px !important; }
-          .lbWrap { overflow-x: hidden !important; }
-          .lbRow .lbUserName { font-size: 13px !important; letter-spacing: 0.1px !important; }
-          .lbRowMe .lbUserName { font-size: 14px !important; }
-          .lbRow .lbWalletLine { font-size: 11px !important; }
+        .lbEyebrow {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          color: rgba(244,247,255,.78);
+          text-transform: uppercase;
+          letter-spacing: 1.8px;
+          font-size: 12px;
+          font-weight: 950;
+        }
+
+        .lbEyebrow::before {
+          content: "";
+          width: 8px;
+          height: 8px;
+          border-radius: 999px;
+          background: linear-gradient(135deg, var(--pink), var(--cyan));
+          box-shadow: 0 0 22px rgba(25,230,255,.72);
+        }
+
+        .lbHero h1 {
+          margin: 8px 0 6px;
+          font-size: clamp(28px, 5vw, 54px);
+          line-height: .96;
+          letter-spacing: -.06em;
+          font-weight: 1000;
+        }
+
+        .lbHero p {
+          margin: 0;
+          color: var(--muted);
+          max-width: 650px;
+          font-size: 14px;
+          line-height: 1.55;
+        }
+
+        .lbHero p span {
+          color: white;
+          font-weight: 950;
+          background: linear-gradient(90deg, var(--pink), var(--cyan));
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+        }
+
+        .lbActions {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+        }
+
+        .lbButton {
+          height: 42px;
+          border-radius: 14px;
+          padding: 0 15px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          text-decoration: none;
+          font-weight: 950;
+          font-size: 13px;
+          cursor: pointer;
+          transition: transform .14s ease, border-color .14s ease, background .14s ease, box-shadow .14s ease;
+        }
+
+        .lbButton:hover { transform: translateY(-1px); }
+        .lbButton:active { transform: translateY(0) scale(.99); }
+        .lbButton.small { height: 36px; margin-top: 10px; }
+
+        .lbButtonGhost {
+          border: 1px solid rgba(255,255,255,.16);
+          background: rgba(255,255,255,.055);
+          color: white;
+        }
+
+        .lbButtonSolid {
+          border: 1px solid rgba(25,230,255,.40);
+          background: linear-gradient(135deg, rgba(138,92,255,.35), rgba(25,230,255,.22));
+          color: white;
+          box-shadow: 0 14px 34px rgba(0,0,0,.28), 0 0 28px rgba(25,230,255,.10);
+        }
+
+        .lbPodium {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 12px;
+          margin: 0 0 14px;
+        }
+
+        .lbPodiumCard {
+          border: 1px solid rgba(255,255,255,.13);
+          border-radius: 22px;
+          padding: 14px;
+          min-width: 0;
+          background:
+            radial-gradient(360px 140px at 50% 0%, rgba(25,230,255,.12), transparent 62%),
+            rgba(255,255,255,.045);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+        }
+
+        .lbPodiumCard.p1 {
+          background:
+            radial-gradient(420px 170px at 50% 0%, rgba(255,56,209,.18), transparent 62%),
+            radial-gradient(420px 170px at 65% 0%, rgba(25,230,255,.16), transparent 62%),
+            rgba(255,255,255,.055);
+          border-color: rgba(255,255,255,.18);
+        }
+
+        .lbPodiumCard.mine { border-color: rgba(0,255,163,.55); box-shadow: 0 0 34px rgba(0,255,163,.13); }
+        .podiumRank { color: var(--muted); font-size: 12px; font-weight: 950; }
+        .podiumName { margin-top: 8px; font-size: 18px; line-height: 1.1; font-weight: 1000; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .podiumStats { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+        .podiumStats span { font-size: 12px; color: rgba(244,247,255,.74); border: 1px solid rgba(255,255,255,.11); border-radius: 999px; padding: 5px 8px; background: rgba(0,0,0,.16); }
+
+        .lbState {
+          border: 1px solid var(--line);
+          border-radius: 18px;
+          min-height: 74px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 14px;
+          color: rgba(244,247,255,.82);
+          background: rgba(255,255,255,.045);
+        }
+
+        .compactState { min-height: 58px; border: 0; border-radius: 0; background: transparent; }
+        .lbError { border-color: rgba(255,80,110,.34); background: rgba(255,80,110,.08); flex-direction: column; align-items: flex-start; }
+        .lbError span { white-space: pre-wrap; font-size: 13px; opacity: .82; }
+
+        .lbSpinner {
+          width: 18px;
+          height: 18px;
+          border-radius: 999px;
+          border: 2px solid rgba(255,255,255,.20);
+          border-top-color: var(--cyan);
+          animation: spin .9s linear infinite;
+        }
+
+        .lbBoard, .lbMyRank {
+          border: 1px solid rgba(255,255,255,.12);
+          border-radius: 22px;
+          overflow: hidden;
+          background: rgba(0,0,0,.22);
+          box-shadow: 0 18px 55px rgba(0,0,0,.30);
+        }
+
+        .lbHead, .lbRow {
+          display: grid;
+          grid-template-columns: 72px 1fr 112px 112px;
+          align-items: center;
+          gap: 0;
+        }
+
+        .lbHead {
+          padding: 12px 14px;
+          font-size: 11px;
+          letter-spacing: 1.1px;
+          font-weight: 1000;
+          text-transform: uppercase;
+          color: rgba(244,247,255,.62);
+          background: rgba(255,255,255,.055);
+          border-bottom: 1px solid rgba(255,255,255,.08);
+        }
+
+        .lbHead > div:nth-child(3), .lbHead > div:nth-child(4) { text-align: right; }
+
+        .lbRow {
+          position: relative;
+          padding: 12px 14px;
+          border-top: 1px solid rgba(255,255,255,.07);
+          background: linear-gradient(180deg, rgba(255,255,255,.030), rgba(255,255,255,.018));
+          transition: transform .16s ease, box-shadow .16s ease, background .16s ease, border-color .16s ease;
+        }
+
+        .lbRow:first-child { border-top: 0; }
+        .lbRow:hover { transform: translateY(-1px); background: rgba(255,255,255,.055); box-shadow: 0 12px 30px rgba(0,0,0,.24); }
+
+        .lbRowSkr {
+          background:
+            radial-gradient(650px 90px at 10% 50%, rgba(0,255,163,.13), transparent 60%),
+            linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.018));
+        }
+
+        .lbRowMe {
+          z-index: 2;
+          border-color: rgba(0,255,163,.50);
+          background:
+            radial-gradient(760px 150px at 18% 50%, rgba(0,255,163,.20), transparent 60%),
+            radial-gradient(760px 150px at 88% 50%, rgba(138,92,255,.16), transparent 60%),
+            rgba(255,255,255,.045);
+          animation: glowPulse 2.4s ease-in-out infinite;
+        }
+
+        .lbRowCompact { border-top: 0; }
+
+        .lbRank span {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 42px;
+          height: 34px;
+          border-radius: 999px;
+          font-weight: 1000;
+          border: 1px solid rgba(138,92,255,.34);
+          background: rgba(138,92,255,.12);
+        }
+
+        .lbIdentity { min-width: 0; }
+        .lbUserLine { display: flex; align-items: center; gap: 8px; min-width: 0; }
+        .lbUserName { display: block; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 1000; letter-spacing: -.01em; }
+        .lbUserMe { color: white; }
+        .lbWalletLine { margin-top: 3px; font-size: 12px; color: rgba(244,247,255,.52); }
+
+        .lbYou {
+          flex: 0 0 auto;
+          font-size: 10px;
+          letter-spacing: .7px;
+          font-weight: 1000;
+          padding: 3px 7px;
+          border-radius: 999px;
+          color: white;
+          border: 1px solid rgba(0,255,163,.46);
+          background: rgba(0,255,163,.12);
+        }
+
+        .lbMetric { text-align: right; }
+        .lbMetric strong { display: block; font-size: 17px; line-height: 1; font-weight: 1000; }
+        .lbMetric span { display: block; margin-top: 4px; font-size: 11px; color: rgba(244,247,255,.58); }
+        .streakMetric strong { color: white; text-shadow: 0 0 22px rgba(25,230,255,.18); }
+
+        .lbFooter {
+          padding: 12px 14px;
+          color: rgba(244,247,255,.58);
+          font-size: 12px;
+          border-top: 1px solid rgba(255,255,255,.08);
+          background: rgba(255,255,255,.035);
+        }
+
+        .lbMyRank { margin-top: 14px; }
+        .lbMyRankTitle {
+          padding: 12px 14px;
+          font-size: 11px;
+          letter-spacing: 1.1px;
+          font-weight: 1000;
+          text-transform: uppercase;
+          color: rgba(244,247,255,.68);
+          border-bottom: 1px solid rgba(255,255,255,.08);
+          background: rgba(255,255,255,.045);
+        }
+
+        @media (max-width: 640px) {
+          .lbShell { padding: 14px 10px; }
+          .lbCard { border-radius: 22px; padding: 12px; }
+          .lbHero { padding: 4px 2px 14px; }
+          .lbActions { width: 100%; }
+          .lbButton { flex: 1; }
+          .lbPodium { grid-template-columns: 1fr; }
+          .lbHead, .lbRow { grid-template-columns: 58px 1fr 74px 74px; }
+          .lbHead { padding: 10px 10px; font-size: 10px; }
+          .lbRow { padding: 11px 10px; }
+          .lbRank span { min-width: 36px; height: 31px; font-size: 12px; }
+          .lbUserName { font-size: 13px; }
+          .lbWalletLine { font-size: 11px; }
+          .lbMetric strong { font-size: 15px; }
+          .lbMetric span { font-size: 10px; }
         }
 
         @media (prefers-reduced-motion: reduce) {
-          .lbShell::before { animation: none !important; }
-          .lbRowMe { animation: none !important; }
-          .lbBtn, .lbRow { transition: none !important; }
+          .lbShell::before, .lbRowMe, .lbSpinner { animation: none !important; }
+          .lbButton, .lbRow { transition: none !important; }
         }
       `}</style>
-    </div>
+    </main>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  shell: {
-    width: "100%",
-    minHeight: "100vh",
-    display: "flex",
-    justifyContent: "center",
-    padding: "28px 14px",
-    color: "#EAEAF2",
-    fontFamily:
-      'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
-  },
-
-  card: {
-    width: "min(980px, 100%)",
-    border: "1px solid rgba(255,255,255,0.12)",
-    borderRadius: 20,
-    background: "rgba(6, 7, 12, 0.82)",
-    boxShadow: "0 22px 70px rgba(0,0,0,0.62)",
-    padding: 18,
-    backdropFilter: "blur(12px)",
-  },
-
-  headerRow: {
-    display: "flex",
-    gap: 16,
-    justifyContent: "space-between",
-    alignItems: "center",
-    flexWrap: "wrap",
-    marginBottom: 14,
-  },
-
-  title: {
-    fontSize: 22,
-    fontWeight: 900,
-    letterSpacing: 0.2,
-  },
-
-  sub: {
-    marginTop: 6,
-    fontSize: 13,
-    opacity: 0.82,
-  },
-
-  badge: {
-    display: "inline-block",
-    padding: "2px 8px",
-    borderRadius: 999,
-    border: "1px solid rgba(0,255,163,0.38)",
-    background: "rgba(0,255,163,0.09)",
-    color: "rgba(225,255,246,1)",
-    fontWeight: 900,
-  },
-
-  actions: {
-    display: "flex",
-    gap: 10,
-    alignItems: "center",
-  },
-
-  btnPrimary: {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "10px 14px",
-    borderRadius: 12,
-    border: "1px solid rgba(0,255,163,0.46)",
-    background: "linear-gradient(90deg, rgba(0,255,163,0.18), rgba(102,102,255,0.14))",
-    color: "#EFFFF9",
-    fontWeight: 900,
-    textDecoration: "none",
-    boxShadow: "0 10px 24px rgba(0,0,0,0.28)",
-  },
-
-  btnSecondary: {
-    padding: "10px 14px",
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.14)",
-    background: "rgba(255,255,255,0.06)",
-    color: "#EAEAF2",
-    fontWeight: 800,
-    cursor: "pointer",
-    boxShadow: "0 10px 24px rgba(0,0,0,0.22)",
-  },
-
-  loadingBox: {
-    display: "flex",
-    gap: 12,
-    alignItems: "center",
-    padding: 14,
-    borderRadius: 16,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.05)",
-  },
-
-  spinner: {
-    width: 16,
-    height: 16,
-    borderRadius: 999,
-    border: "2px solid rgba(255,255,255,0.25)",
-    borderTop: "2px solid rgba(0,255,163,0.9)",
-    animation: "spin 0.9s linear infinite",
-  },
-
-  errorBox: {
-    padding: 14,
-    borderRadius: 16,
-    border: "1px solid rgba(255,90,90,0.35)",
-    background: "rgba(255,90,90,0.08)",
-  },
-
-  errorTitle: { fontWeight: 900, marginBottom: 6 },
-  errorText: { opacity: 0.9, fontSize: 13, whiteSpace: "pre-wrap" },
-
-  emptyBox: {
-    padding: 14,
-    borderRadius: 16,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.05)",
-    opacity: 0.9,
-  },
-
-  tableWrap: {
-    borderRadius: 18,
-    border: "1px solid rgba(255,255,255,0.10)",
-    overflow: "hidden",
-    boxShadow: "0 18px 55px rgba(0,0,0,0.30)",
-  },
-
-  tableHead: {
-    display: "grid",
-    gridTemplateColumns: "70px 1fr 110px 110px",
-    gap: 0,
-    padding: "12px 12px",
-    background: "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))",
-    fontWeight: 900,
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: 0.9,
-    borderBottom: "1px solid rgba(255,255,255,0.06)",
-  },
-
-  tableBody: {
-    display: "flex",
-    flexDirection: "column",
-  },
-
-  row: {
-    display: "grid",
-    gridTemplateColumns: "70px 1fr 110px 110px",
-    padding: "12px 12px",
-    borderTop: "1px solid rgba(255,255,255,0.06)",
-    background: "linear-gradient(180deg, rgba(0,0,0,0.16), rgba(0,0,0,0.10))",
-  },
-
-  rowSkrGlow: {
-    borderTop: "1px solid rgba(0,255,163,0.22)",
-    boxShadow: "inset 0 0 0 1px rgba(0,255,163,0.16), 0 0 20px rgba(0,255,163,0.10)",
-    background:
-      "radial-gradient(900px 140px at 12% 50%, rgba(0,255,163,0.18), transparent 60%)," +
-      "radial-gradient(700px 140px at 88% 40%, rgba(0,255,163,0.10), transparent 55%)," +
-      "linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.10))",
-  },
-
-  rowMePop: {
-    borderTop: "1px solid rgba(0,255,163,0.55)",
-    boxShadow: "inset 0 0 0 1px rgba(0,255,163,0.18)",
-    background:
-      "radial-gradient(900px 220px at 18% 50%, rgba(0,255,163,0.24), transparent 62%)," +
-      "radial-gradient(900px 220px at 86% 55%, rgba(120,120,255,0.16), transparent 64%)," +
-      "linear-gradient(180deg, rgba(0,0,0,0.22), rgba(0,0,0,0.12))",
-  },
-
-  colRank: { display: "flex", alignItems: "center" },
-
-  colName: {
-    display: "flex",
-    minWidth: 0,
-    flexDirection: "column",
-    justifyContent: "center",
-  },
-
-  colPoints: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "flex-end",
-    justifyContent: "center",
-  },
-
-  colStreak: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "flex-end",
-    justifyContent: "center",
-  },
-
-  rankPill: {
-    display: "inline-flex",
-    minWidth: 44,
-    justifyContent: "center",
-    padding: "6px 10px",
-    borderRadius: 999,
-    border: "1px solid rgba(102,102,255,0.30)",
-    background: "rgba(102,102,255,0.10)",
-    fontWeight: 900,
-  },
-
-  rankPillMe: {
-    border: "1px solid rgba(0,255,163,0.60)",
-    background: "rgba(0,255,163,0.12)",
-    boxShadow: "0 0 22px rgba(0,255,163,0.22)",
-  },
-
-  userLine: { display: "flex", alignItems: "center", gap: 10, minWidth: 0 },
-
-  mePill: {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    height: 18,
-    padding: "0 8px",
-    borderRadius: 999,
-    border: "1px solid rgba(0,255,163,0.55)",
-    background: "linear-gradient(90deg, rgba(0,255,163,0.18), rgba(102,102,255,0.10))",
-    color: "#EFFFF9",
-    fontSize: 11,
-    fontWeight: 900,
-    letterSpacing: 0.6,
-    textTransform: "uppercase",
-    boxShadow: "0 0 18px rgba(0,255,163,0.22)",
-    flex: "0 0 auto",
-  },
-
-  userName: {
-    fontWeight: 900,
-    letterSpacing: 0.2,
-    display: "-webkit-box",
-    WebkitLineClamp: 2,
-    WebkitBoxOrient: "vertical",
-    overflow: "hidden",
-    whiteSpace: "normal",
-    wordBreak: "break-word",
-    lineHeight: 1.15,
-  },
-
-  userNameMe: {
-    fontWeight: 950 as any,
-    letterSpacing: 0.2,
-    display: "block",
-    minWidth: 0,
-    maxWidth: "100%",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    fontSize: 15,
-    lineHeight: 1.15,
-  },
-
-  userNameSingle: {
-    fontWeight: 900,
-    letterSpacing: 0.2,
-    display: "block",
-    minWidth: 0,
-    maxWidth: "100%",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-
-  walletLine: { fontSize: 12, opacity: 0.72, marginTop: 2 },
-  walletLineMe: { fontSize: 12, opacity: 0.82, marginTop: 2 },
-
-  statNum: { fontWeight: 900, fontSize: 16 },
-  statNumMe: { fontWeight: 950 as any, fontSize: 18 },
-
-  statLabel: { fontSize: 11, opacity: 0.7, marginTop: 2 },
-
-  footerNote: {
-    padding: 12,
-    fontSize: 12,
-    opacity: 0.72,
-    borderTop: "1px solid rgba(255,255,255,0.06)",
-    background: "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02))",
-  },
-};
