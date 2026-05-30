@@ -277,7 +277,7 @@ export default function LeaderboardPage() {
 
     return (
       <div
-        className={`lbRow ${showSkr ? "lbRowSkr" : ""} ${isMe ? "lbRowMe" : ""} ${
+        className={`lbRow rank${row.rank ?? idx + 1} ${showSkr ? "lbRowSkr" : ""} ${isMe ? "lbRowMe" : ""} ${
           compact ? "lbRowCompact" : ""
         }`}
       >
@@ -422,6 +422,9 @@ export default function LeaderboardPage() {
           --muted: rgba(244,247,255,.68);
           --line: rgba(255,255,255,.12);
           --glass: rgba(7, 9, 22, .72);
+          --gold: #ffd76a;
+          --silver: #d9e7ff;
+          --bronze: #d99a5f;
         }
 
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -432,6 +435,15 @@ export default function LeaderboardPage() {
         @keyframes bgShift {
           0%, 100% { transform: scale(1.02) translate3d(0,0,0); }
           50% { transform: scale(1.06) translate3d(-10px, -8px, 0); }
+        }
+        @keyframes orbitSweep {
+          0% { transform: rotate(0deg) scale(1); opacity: .34; }
+          50% { opacity: .68; }
+          100% { transform: rotate(360deg) scale(1); opacity: .34; }
+        }
+        @keyframes starTwinkle {
+          0%, 100% { opacity: .20; transform: scale(1); }
+          50% { opacity: .55; transform: scale(1.05); }
         }
 
         .lbShell {
@@ -473,26 +485,34 @@ export default function LeaderboardPage() {
           inset: 0;
           pointer-events: none;
           background:
+            radial-gradient(circle at 18% 20%, rgba(255,255,255,.55) 0 1px, transparent 2px),
+            radial-gradient(circle at 76% 24%, rgba(255,255,255,.44) 0 1px, transparent 2px),
+            radial-gradient(circle at 42% 68%, rgba(25,230,255,.42) 0 1px, transparent 2px),
             linear-gradient(90deg, transparent, rgba(255,255,255,.035), transparent),
-            radial-gradient(rgba(255,255,255,.06) 1px, transparent 1px);
-          background-size: auto, 3px 3px;
-          opacity: .28;
-          mix-blend-mode: overlay;
+            radial-gradient(rgba(255,255,255,.055) 1px, transparent 1px);
+          background-size: 520px 520px, 680px 680px, 780px 780px, auto, 3px 3px;
+          opacity: .30;
+          mix-blend-mode: screen;
+          animation: starTwinkle 6s ease-in-out infinite;
         }
 
         .lbCard {
-          width: min(1040px, 100%);
+          width: min(1060px, 100%);
           position: relative;
           z-index: 1;
-          border: 1px solid rgba(255,255,255,.14);
-          border-radius: 28px;
+          border: 1px solid rgba(255,255,255,.16);
+          border-radius: 30px;
           background:
-            linear-gradient(180deg, rgba(10,12,28,.82), rgba(5,6,16,.76)),
-            radial-gradient(900px 240px at 18% 0%, rgba(255,56,209,.12), transparent 60%),
-            radial-gradient(900px 240px at 88% 0%, rgba(25,230,255,.12), transparent 60%);
-          backdrop-filter: blur(18px);
-          -webkit-backdrop-filter: blur(18px);
-          box-shadow: 0 26px 110px rgba(0,0,0,.72);
+            radial-gradient(1000px 360px at 50% -10%, rgba(25,230,255,.13), transparent 56%),
+            radial-gradient(880px 310px at 12% 0%, rgba(255,56,209,.15), transparent 60%),
+            radial-gradient(900px 320px at 92% 6%, rgba(138,92,255,.18), transparent 62%),
+            linear-gradient(180deg, rgba(8,10,26,.86), rgba(4,5,15,.80));
+          backdrop-filter: blur(20px) saturate(1.15);
+          -webkit-backdrop-filter: blur(20px) saturate(1.15);
+          box-shadow:
+            0 34px 130px rgba(0,0,0,.78),
+            inset 0 1px 0 rgba(255,255,255,.08),
+            inset 0 -1px 0 rgba(255,255,255,.04);
           padding: 18px;
           overflow: hidden;
         }
@@ -504,19 +524,57 @@ export default function LeaderboardPage() {
           pointer-events: none;
           border-radius: inherit;
           padding: 1px;
-          background: linear-gradient(135deg, rgba(255,56,209,.36), rgba(25,230,255,.34), rgba(0,255,163,.18));
+          background: linear-gradient(135deg, rgba(255,56,209,.42), rgba(25,230,255,.38), rgba(0,255,163,.20), rgba(255,215,106,.16));
           -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
           -webkit-mask-composite: xor;
           mask-composite: exclude;
         }
 
+        .lbCard::after {
+          content: "";
+          position: absolute;
+          width: 560px;
+          height: 560px;
+          right: -220px;
+          top: -270px;
+          border-radius: 50%;
+          border: 1px solid rgba(25,230,255,.18);
+          box-shadow:
+            inset 0 0 46px rgba(138,92,255,.10),
+            0 0 72px rgba(25,230,255,.10);
+          pointer-events: none;
+          animation: orbitSweep 34s linear infinite;
+        }
+
         .lbHero {
+          position: relative;
           display: flex;
           align-items: flex-start;
           justify-content: space-between;
           gap: 18px;
           flex-wrap: wrap;
-          padding: 6px 4px 18px;
+          padding: 18px 18px 20px;
+          margin-bottom: 14px;
+          border: 1px solid rgba(255,255,255,.10);
+          border-radius: 24px;
+          background:
+            radial-gradient(900px 220px at 22% 0%, rgba(255,56,209,.12), transparent 62%),
+            radial-gradient(900px 220px at 80% 0%, rgba(25,230,255,.12), transparent 62%),
+            rgba(255,255,255,.035);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+          overflow: hidden;
+        }
+        .lbHero::after {
+          content: "";
+          position: absolute;
+          right: 26px;
+          bottom: -72px;
+          width: 240px;
+          height: 240px;
+          border-radius: 50%;
+          border: 1px solid rgba(255,255,255,.10);
+          box-shadow: inset 0 0 42px rgba(25,230,255,.08);
+          pointer-events: none;
         }
 
         .lbEyebrow {
@@ -609,29 +667,72 @@ export default function LeaderboardPage() {
         }
 
         .lbPodiumCard {
+          position: relative;
           border: 1px solid rgba(255,255,255,.13);
-          border-radius: 22px;
-          padding: 14px;
+          border-radius: 24px;
+          padding: 16px;
           min-width: 0;
+          overflow: hidden;
           background:
-            radial-gradient(360px 140px at 50% 0%, rgba(25,230,255,.12), transparent 62%),
-            rgba(255,255,255,.045);
-          box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+            radial-gradient(420px 170px at 50% 0%, rgba(25,230,255,.13), transparent 62%),
+            linear-gradient(180deg, rgba(255,255,255,.060), rgba(255,255,255,.032));
+          box-shadow:
+            inset 0 1px 0 rgba(255,255,255,.10),
+            0 18px 52px rgba(0,0,0,.30);
+        }
+        .lbPodiumCard::before {
+          content: "";
+          position: absolute;
+          inset: -1px;
+          pointer-events: none;
+          background: radial-gradient(280px 120px at 50% 0%, rgba(255,255,255,.16), transparent 64%);
+          opacity: .72;
+        }
+        .lbPodiumCard::after {
+          content: "";
+          position: absolute;
+          right: -48px;
+          top: -72px;
+          width: 150px;
+          height: 150px;
+          border-radius: 50%;
+          border: 1px solid rgba(255,255,255,.08);
+          pointer-events: none;
         }
 
         .lbPodiumCard.p1 {
+          border-color: rgba(255,215,106,.54);
           background:
-            radial-gradient(420px 170px at 50% 0%, rgba(255,56,209,.18), transparent 62%),
-            radial-gradient(420px 170px at 65% 0%, rgba(25,230,255,.16), transparent 62%),
-            rgba(255,255,255,.055);
-          border-color: rgba(255,255,255,.18);
+            radial-gradient(420px 180px at 50% -8%, rgba(255,215,106,.34), transparent 64%),
+            radial-gradient(360px 160px at 18% 0%, rgba(255,56,209,.16), transparent 62%),
+            linear-gradient(180deg, rgba(255,215,106,.100), rgba(255,255,255,.035));
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.15), 0 22px 70px rgba(255,184,61,.12), 0 18px 58px rgba(0,0,0,.34);
+        }
+        .lbPodiumCard.p2 {
+          border-color: rgba(217,231,255,.48);
+          background:
+            radial-gradient(420px 180px at 50% -8%, rgba(217,231,255,.25), transparent 64%),
+            radial-gradient(360px 160px at 80% 0%, rgba(25,230,255,.13), transparent 62%),
+            linear-gradient(180deg, rgba(217,231,255,.080), rgba(255,255,255,.032));
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 22px 70px rgba(217,231,255,.09), 0 18px 58px rgba(0,0,0,.34);
+        }
+        .lbPodiumCard.p3 {
+          border-color: rgba(217,154,95,.50);
+          background:
+            radial-gradient(420px 180px at 50% -8%, rgba(217,154,95,.28), transparent 64%),
+            radial-gradient(360px 160px at 14% 0%, rgba(138,92,255,.13), transparent 62%),
+            linear-gradient(180deg, rgba(217,154,95,.090), rgba(255,255,255,.032));
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 22px 70px rgba(217,154,95,.10), 0 18px 58px rgba(0,0,0,.34);
         }
 
         .lbPodiumCard.mine { border-color: rgba(0,255,163,.55); box-shadow: 0 0 34px rgba(0,255,163,.13); }
-        .podiumRank { color: var(--muted); font-size: 12px; font-weight: 950; }
-        .podiumName { margin-top: 8px; font-size: 18px; line-height: 1.1; font-weight: 1000; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .podiumStats { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-        .podiumStats span { font-size: 12px; color: rgba(244,247,255,.74); border: 1px solid rgba(255,255,255,.11); border-radius: 999px; padding: 5px 8px; background: rgba(0,0,0,.16); }
+        .podiumRank { position: relative; color: var(--muted); font-size: 12px; font-weight: 950; letter-spacing: .8px; }
+        .p1 .podiumRank { color: var(--gold); text-shadow: 0 0 18px rgba(255,215,106,.35); }
+        .p2 .podiumRank { color: var(--silver); text-shadow: 0 0 18px rgba(217,231,255,.25); }
+        .p3 .podiumRank { color: var(--bronze); text-shadow: 0 0 18px rgba(217,154,95,.28); }
+        .podiumName { position: relative; margin-top: 8px; font-size: 18px; line-height: 1.1; font-weight: 1000; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .podiumStats { position: relative; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+        .podiumStats span { font-size: 12px; color: rgba(244,247,255,.78); border: 1px solid rgba(255,255,255,.12); border-radius: 999px; padding: 5px 8px; background: rgba(0,0,0,.18); }
 
         .lbState {
           border: 1px solid var(--line);
@@ -659,11 +760,15 @@ export default function LeaderboardPage() {
         }
 
         .lbBoard, .lbMyRank {
-          border: 1px solid rgba(255,255,255,.12);
-          border-radius: 22px;
+          border: 1px solid rgba(255,255,255,.13);
+          border-radius: 24px;
           overflow: hidden;
-          background: rgba(0,0,0,.22);
-          box-shadow: 0 18px 55px rgba(0,0,0,.30);
+          background:
+            radial-gradient(900px 260px at 50% 0%, rgba(25,230,255,.055), transparent 70%),
+            rgba(0,0,0,.28);
+          box-shadow:
+            0 22px 70px rgba(0,0,0,.38),
+            inset 0 1px 0 rgba(255,255,255,.06);
         }
 
         .lbHead, .lbRow {
@@ -679,9 +784,11 @@ export default function LeaderboardPage() {
           letter-spacing: 1.1px;
           font-weight: 1000;
           text-transform: uppercase;
-          color: rgba(244,247,255,.62);
-          background: rgba(255,255,255,.055);
-          border-bottom: 1px solid rgba(255,255,255,.08);
+          color: rgba(244,247,255,.64);
+          background:
+            linear-gradient(90deg, rgba(255,56,209,.065), rgba(25,230,255,.065)),
+            rgba(255,255,255,.050);
+          border-bottom: 1px solid rgba(255,255,255,.09);
         }
 
         .lbHead > div:nth-child(3), .lbHead > div:nth-child(4) { text-align: right; }
@@ -701,6 +808,46 @@ export default function LeaderboardPage() {
           background:
             radial-gradient(650px 90px at 10% 50%, rgba(0,255,163,.13), transparent 60%),
             linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.018));
+        }
+
+        .lbRow.rank1 {
+          border-color: rgba(255,215,106,.44);
+          background:
+            radial-gradient(760px 140px at 5% 50%, rgba(255,215,106,.18), transparent 62%),
+            radial-gradient(760px 140px at 90% 50%, rgba(255,56,209,.08), transparent 62%),
+            linear-gradient(180deg, rgba(255,215,106,.055), rgba(255,255,255,.020));
+        }
+        .lbRow.rank2 {
+          border-color: rgba(217,231,255,.34);
+          background:
+            radial-gradient(760px 140px at 5% 50%, rgba(217,231,255,.14), transparent 62%),
+            radial-gradient(760px 140px at 90% 50%, rgba(25,230,255,.08), transparent 62%),
+            linear-gradient(180deg, rgba(217,231,255,.045), rgba(255,255,255,.020));
+        }
+        .lbRow.rank3 {
+          border-color: rgba(217,154,95,.38);
+          background:
+            radial-gradient(760px 140px at 5% 50%, rgba(217,154,95,.15), transparent 62%),
+            radial-gradient(760px 140px at 90% 50%, rgba(138,92,255,.08), transparent 62%),
+            linear-gradient(180deg, rgba(217,154,95,.048), rgba(255,255,255,.020));
+        }
+        .lbRow.rank1 .lbRank span {
+          color: #180f00;
+          border-color: rgba(255,215,106,.72);
+          background: linear-gradient(135deg, #fff1a8, #ffd76a 52%, #b8781d);
+          box-shadow: 0 0 28px rgba(255,215,106,.30);
+        }
+        .lbRow.rank2 .lbRank span {
+          color: #07111f;
+          border-color: rgba(217,231,255,.64);
+          background: linear-gradient(135deg, #ffffff, #d9e7ff 52%, #8d9bb3);
+          box-shadow: 0 0 24px rgba(217,231,255,.20);
+        }
+        .lbRow.rank3 .lbRank span {
+          color: #170904;
+          border-color: rgba(217,154,95,.66);
+          background: linear-gradient(135deg, #ffd0a4, #d99a5f 52%, #8b4a23);
+          box-shadow: 0 0 24px rgba(217,154,95,.22);
         }
 
         .lbRowMe {
@@ -724,7 +871,8 @@ export default function LeaderboardPage() {
           border-radius: 999px;
           font-weight: 1000;
           border: 1px solid rgba(138,92,255,.34);
-          background: rgba(138,92,255,.12);
+          background: linear-gradient(180deg, rgba(138,92,255,.16), rgba(25,230,255,.06));
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.09);
         }
 
         .lbIdentity { min-width: 0; }
