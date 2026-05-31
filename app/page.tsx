@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import { useWallet } from "@solana/wallet-adapter-react";
 import {
   Connection,
   PublicKey,
@@ -18,7 +18,7 @@ import {
 
 /* ---------------- TERMS UPDATE BANNER CONFIG ---------------- */
 const TERMS_URL = "https://seeker-streaks.vercel.app/terms";
-const TERMS_UPDATED_UNTIL_UTC = "2026-03-08T15:00:00Z"; // 8th March 2026, 3pm UTC
+const TERMS_UPDATED_UNTIL_UTC = "2026-03-08T15:00:00Z";
 /* ----------------------------------------------------------- */
 
 const WalletMultiButton = dynamic(
@@ -32,6 +32,8 @@ type BlockhashResult = {
   lastValidBlockHeight: number;
   rpc: string;
 };
+
+type ConfirmAction = "pay" | "reset" | null;
 
 async function getWorkingConnectionForBlockhash(): Promise<BlockhashResult> {
   const rpcs = [
@@ -58,7 +60,6 @@ async function getWorkingConnectionForBlockhash(): Promise<BlockhashResult> {
   );
 }
 
-// ---------- helpers ----------
 function toBase64(bytes: Uint8Array): string {
   let binary = "";
   bytes.forEach((b) => (binary += String.fromCharCode(b)));
@@ -70,18 +71,15 @@ function shortWallet(w?: string | null) {
   return `${w.slice(0, 4)}…${w.slice(-4)}`;
 }
 
-// ---------- types ----------
 type RescueQuote = {
   ok: boolean;
   verified: boolean;
   missedDays: number;
 
-  // old keys (still possible)
   canRescue?: boolean;
   costSKR?: number;
   remainingRescue?: number;
 
-  // new keys (preferred)
   canProtect?: boolean;
   protectionCostSKR?: number;
   protectionsLeft?: number;
@@ -94,7 +92,6 @@ type RescueQuote = {
 
 export default function Home() {
   const { publicKey, connected, signMessage, wallet } = useWallet();
-  const { connection } = useConnection();
 
   const [mounted, setMounted] = useState(false);
   const [sessionVerified, setSessionVerified] = useState(false);
@@ -109,8 +106,8 @@ export default function Home() {
   const [quote, setQuote] = useState<RescueQuote | null>(null);
   const [paying, setPaying] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
 
-  // ---------------- banner state (UI only; no functionality changes) ----------------
   const [showTermsBanner, setShowTermsBanner] = useState(false);
 
   useEffect(() => setMounted(true), []);
@@ -119,7 +116,6 @@ export default function Home() {
     const until = new Date(TERMS_UPDATED_UNTIL_UTC).getTime();
     setShowTermsBanner(Date.now() < until);
   }, []);
-  // -------------------------------------------------------------------------------
 
   useEffect(() => {
     setSessionVerified(false);
@@ -127,13 +123,17 @@ export default function Home() {
     setLeaderboardPoints(null);
     setSkrName(null);
     setQuote(null);
+    setConfirmAction(null);
     lastResolvedWallet.current = null;
     setMsg("");
   }, [publicKey]);
 
   const walletStr = useMemo(() => publicKey?.toBase58() ?? null, [publicKey]);
 
-  // ---------- load protection quote ----------
+  const protectionCost = Number(
+    quote?.protectionCostSKR ?? quote?.costSKR ?? 0
+  );
+
   const loadQuote = useCallback(async () => {
     if (!walletStr) return;
 
@@ -155,7 +155,6 @@ export default function Home() {
     setQuote(q);
   }, [walletStr]);
 
-  // ---------- resolve .skr name ----------
   const resolveSkr = useCallback(async () => {
     if (!walletStr) return;
     if (lastResolvedWallet.current === walletStr) return;
@@ -193,7 +192,6 @@ export default function Home() {
     }
   }, [walletStr]);
 
-  // ---------- load points from the all-time leaderboard ----------
   const loadLeaderboardPoints = useCallback(async () => {
     if (!walletStr) return;
 
@@ -225,7 +223,6 @@ export default function Home() {
     loadLeaderboardPoints();
   }, [connected, walletStr, resolveSkr, loadLeaderboardPoints]);
 
-  // ---------- load status ----------
   const loadStatus = useCallback(async () => {
     if (!walletStr) return;
 
@@ -244,10 +241,10 @@ export default function Home() {
       await loadQuote();
     } else {
       setQuote(null);
+      setConfirmAction(null);
     }
   }, [walletStr, loadQuote, loadLeaderboardPoints]);
 
-  // ---------- verify ----------
   const verifyWallet = useCallback(async () => {
     if (!connected || !walletStr || !signMessage) {
       setMsg("Connect a wallet first.");
@@ -298,7 +295,6 @@ export default function Home() {
     }
   }, [connected, walletStr, signMessage, loadStatus, loadQuote]);
 
-  // ---------- check in (NORMAL / NO NONCE) ----------
   const checkIn = useCallback(async () => {
     if (!walletStr) return;
 
@@ -329,13 +325,13 @@ export default function Home() {
 
       setMsg(`Checked in • Streak ${json.streak}`);
       setQuote(null);
+      setConfirmAction(null);
       await loadStatus();
     } catch (e: any) {
       setMsg(e?.message || "Check-in failed.");
     }
   }, [walletStr, loadStatus, loadQuote]);
 
-  // ---------- reset streak (free) ----------
   const resetStreak = useCallback(async () => {
     if (!walletStr) return;
 
@@ -358,6 +354,7 @@ export default function Home() {
 
       setMsg("Streak reset — protections refreshed. Keep checking in daily.");
       setQuote(null);
+      setConfirmAction(null);
       await loadStatus();
       await loadQuote();
     } catch (e: any) {
@@ -367,7 +364,6 @@ export default function Home() {
     }
   }, [walletStr, loadStatus, loadQuote]);
 
-  // ---------- pay protection (still rescue_paid on backend) ----------
   const payProtection = useCallback(async () => {
     if (!publicKey || !walletStr) {
       setMsg("Wallet not ready.");
@@ -437,8 +433,6 @@ export default function Home() {
         preflightCommitment: "confirmed",
       });
 
-      // Do not let a slow/expired client confirmation stop the protection flow.
-      // The backend commit route should verify the txSig on-chain.
       try {
         await rpcConn.confirmTransaction(
           { signature: sig, blockhash, lastValidBlockHeight },
@@ -473,7 +467,6 @@ export default function Home() {
       let commitRes: Response | null = null;
       let commitJson: any = null;
 
-      // Give RPC/indexing a few seconds to see the transaction if it has just landed.
       for (let attempt = 1; attempt <= 6; attempt++) {
         const result = await commitProtection();
         commitRes = result.commitRes;
@@ -501,6 +494,7 @@ export default function Home() {
       setMsg(
         `Protected ${commitJson.protectedDays ?? commitJson.rescuedDays} day(s) ✓`
       );
+      setConfirmAction(null);
       await loadStatus();
       await loadQuote();
     } catch (e: any) {
@@ -509,6 +503,34 @@ export default function Home() {
       setPaying(false);
     }
   }, [publicKey, walletStr, quote, wallet, loadStatus, loadQuote]);
+
+  const requestPayProtection = useCallback(() => {
+    setMsg("");
+    setConfirmAction("pay");
+  }, []);
+
+  const requestResetStreak = useCallback(() => {
+    setMsg("");
+    setConfirmAction("reset");
+  }, []);
+
+  const cancelConfirmAction = useCallback(() => {
+    setConfirmAction(null);
+  }, []);
+
+  const confirmSelectedAction = useCallback(async () => {
+    const action = confirmAction;
+    setConfirmAction(null);
+
+    if (action === "pay") {
+      await payProtection();
+      return;
+    }
+
+    if (action === "reset") {
+      await resetStreak();
+    }
+  }, [confirmAction, payProtection, resetStreak]);
 
   if (!mounted) return null;
 
@@ -523,6 +545,21 @@ export default function Home() {
   const protectionsLeft =
     Number(status?.protectionsLeft ?? status?.remainingRescue ?? 0);
 
+  const confirmTitle =
+    confirmAction === "pay"
+      ? "Confirm streak protection"
+      : "Confirm streak reset";
+
+  const confirmMessage =
+    confirmAction === "pay"
+      ? `Pay ${protectionCost} SKR to protect your current streak. This freezes your streak at its previous value for the missed day(s). It does not add streak days or points.`
+      : "Reset streak for free. This restarts your streak at 1 and refreshes your protections. Your existing points are kept.";
+
+  const confirmButtonText =
+    confirmAction === "pay"
+      ? `Yes, pay ${protectionCost} SKR`
+      : "Yes, reset streak";
+
   return (
     <main className="ssShell">
       <section className="ssCard">
@@ -533,7 +570,6 @@ export default function Home() {
           <p>Daily streaks for Solana Seeker users</p>
         </div>
 
-        {/* ---------------- TERMS UPDATE BANNER (UI ONLY) ---------------- */}
         {showTermsBanner && (
           <a
             href={TERMS_URL}
@@ -545,15 +581,13 @@ export default function Home() {
             constitutes acceptance of the updated Terms. <span>View Terms →</span>
           </a>
         )}
-        {/* -------------------------------------------------------------- */}
 
         <div className="ssPanel ssWalletPanel">
           <WalletMultiButton />
 
           {connected && (
             <div className="ssConnected">
-              <span>Connected:</span>{" "}
-              <strong>{connectedLabel}</strong>
+              <span>Connected:</span> <strong>{connectedLabel}</strong>
 
               {!skrName && (
                 <div className="ssHint">
@@ -604,36 +638,44 @@ export default function Home() {
 
         {showProtectionCard && (
           <div className="ssPanel ssProtection">
-            <div className="ssPanelTitle">Protect your streak</div>
+            <div className="ssPanelTitle">Protection required</div>
 
             <p>
-              You missed <strong>{quote!.missedDays}</strong> day(s). Pay{" "}
-              <strong>{quote!.protectionCostSKR ?? quote!.costSKR} SKR</strong>{" "}
-              to protect your current streak.
+              You missed <strong>{quote!.missedDays}</strong> day(s). Choose how
+              you want to continue.
             </p>
 
+            <div className="ssChoiceBox">
+              <strong>Pay {protectionCost} SKR</strong>
+              <span>
+                Protects your current streak by freezing it at the previous
+                value. It does not add streak days or points.
+              </span>
+            </div>
+
             <button
-              onClick={payProtection}
+              onClick={requestPayProtection}
               disabled={paying || resetting}
               className="ssButton ssButtonPrimary"
             >
-              {paying
-                ? "Paying…"
-                : `Pay ${quote!.protectionCostSKR ?? quote!.costSKR} SKR`}
+              {paying ? "Paying…" : `Pay ${protectionCost} SKR`}
             </button>
 
+            <div className="ssChoiceBox">
+              <strong>Reset streak (free)</strong>
+              <span>
+                Restarts your streak at 1 and refreshes protections. Your
+                existing points are kept.
+              </span>
+            </div>
+
             <button
-              onClick={resetStreak}
+              onClick={requestResetStreak}
               disabled={resetting || paying}
               className="ssButton ssButtonGhost"
             >
               {resetting ? "Resetting…" : "Reset streak (free)"}
             </button>
-
-            <div className="ssSmallText">
-              Resets your streak to <strong>1</strong> but{" "}
-              <strong>refreshes protections</strong>. You still keep your points.
-            </div>
           </div>
         )}
 
@@ -676,6 +718,33 @@ export default function Home() {
           </div>
         </footer>
       </section>
+
+      {confirmAction && (
+        <div className="ssConfirmOverlay" role="dialog" aria-modal="true">
+          <div className="ssConfirmBox">
+            <div className="ssConfirmTitle">{confirmTitle}</div>
+            <p>{confirmMessage}</p>
+
+            <div className="ssConfirmActions">
+              <button
+                onClick={cancelConfirmAction}
+                disabled={paying || resetting}
+                className="ssConfirmNo"
+              >
+                No, go back
+              </button>
+
+              <button
+                onClick={confirmSelectedAction}
+                disabled={paying || resetting}
+                className="ssConfirmYes"
+              >
+                {confirmButtonText}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         :root {
@@ -952,6 +1021,31 @@ export default function Home() {
           line-height: 1.45;
         }
 
+        .ssChoiceBox {
+          margin-top: 10px;
+          padding: 12px;
+          border: 1px solid rgba(255,255,255,.12);
+          border-radius: 15px;
+          background: rgba(0,0,0,.18);
+        }
+
+        .ssChoiceBox strong,
+        .ssChoiceBox span {
+          display: block;
+        }
+
+        .ssChoiceBox strong {
+          font-size: 13px;
+          color: var(--ss-text);
+          margin-bottom: 4px;
+        }
+
+        .ssChoiceBox span {
+          font-size: 12px;
+          line-height: 1.45;
+          color: var(--ss-muted);
+        }
+
         .ssButton {
           width: 100%;
           min-height: 46px;
@@ -992,13 +1086,6 @@ export default function Home() {
           color: rgba(243,247,255,.38);
           cursor: not-allowed;
           box-shadow: none;
-        }
-
-        .ssSmallText {
-          margin-top: 10px;
-          color: var(--ss-muted);
-          font-size: 12px;
-          line-height: 1.45;
         }
 
         .ssMessage {
@@ -1068,7 +1155,6 @@ export default function Home() {
 
         .ssNavFounder b { color: var(--ss-gold); }
 
-
         .ssFooter {
           margin-top: 18px;
           text-align: center;
@@ -1102,11 +1188,85 @@ export default function Home() {
           color: rgba(243,247,255,.34);
         }
 
+        .ssConfirmOverlay {
+          position: fixed;
+          inset: 0;
+          z-index: 50;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          background: rgba(0,0,0,.72);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+        }
+
+        .ssConfirmBox {
+          width: min(420px, 100%);
+          border: 1px solid rgba(255,255,255,.18);
+          border-radius: 22px;
+          padding: 18px;
+          background:
+            radial-gradient(420px 160px at 10% 0%, rgba(255,59,212,.16), transparent 70%),
+            radial-gradient(420px 160px at 90% 0%, rgba(39,231,255,.16), transparent 70%),
+            rgba(8,10,28,.95);
+          box-shadow: 0 30px 100px rgba(0,0,0,.78);
+          color: var(--ss-text);
+        }
+
+        .ssConfirmTitle {
+          font-size: 18px;
+          font-weight: 1000;
+          margin-bottom: 8px;
+        }
+
+        .ssConfirmBox p {
+          margin: 0;
+          color: var(--ss-muted);
+          font-size: 13px;
+          line-height: 1.5;
+        }
+
+        .ssConfirmActions {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+          margin-top: 16px;
+        }
+
+        .ssConfirmNo,
+        .ssConfirmYes {
+          min-height: 44px;
+          border: 0;
+          border-radius: 14px;
+          padding: 10px 12px;
+          font-weight: 950;
+          cursor: pointer;
+        }
+
+        .ssConfirmNo {
+          color: var(--ss-text);
+          border: 1px solid rgba(255,255,255,.16);
+          background: rgba(255,255,255,.06);
+        }
+
+        .ssConfirmYes {
+          color: #050713;
+          background: linear-gradient(135deg, var(--ss-pink), var(--ss-violet) 48%, var(--ss-cyan));
+        }
+
+        .ssConfirmNo:disabled,
+        .ssConfirmYes:disabled {
+          opacity: .55;
+          cursor: not-allowed;
+        }
+
         @media (max-width: 430px) {
           .ssShell { padding: 14px; }
           .ssCard { border-radius: 24px; padding: 15px; }
           .ssStats { grid-template-columns: repeat(2, 1fr); }
           .ssHero h1 { font-size: 38px; }
+          .ssConfirmActions { grid-template-columns: 1fr; }
         }
 
         @media (prefers-reduced-motion: reduce) {
