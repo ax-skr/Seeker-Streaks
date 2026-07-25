@@ -182,22 +182,6 @@ Note: Wallet connection requires the native Solana Mobile Seed Vault wallet (ava
 
 ---
 
-## 🎥 Demo Video
-
-Demo video showcasing app functionality:
-
-👉 https://youtube.com/shorts/UIwz8LZi7Yc?feature=share
-
----
-
-## 🎤 Pitch Deck
-
-Seeker Streaks — Behavioral Identity Layer for Solana Mobile
-
-👉 https://drive.google.com/file/d/1B6wd2_llCDNOtyPWadODjrWvCVOgTIx4/view
-
----
-
 ## 🔐 Security
 
 Sensitive credentials are **never stored in the repository**.
